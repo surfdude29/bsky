@@ -15,7 +15,7 @@ const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
 
 // RFC 3986 §3.2: the authority ends at "/", "?", "#" or end of input. The port is
 // part of the authority, so ":" is handled here and not treated as a terminator.
-// The (?!\\d) makes an over-long port fail the whole group rather than matching a
+// The (?!\d) makes an over-long port fail the whole group rather than matching a
 // five-digit prefix of it: "example.com:123456/path" is not "example.com:12345".
 const PORT = '(?::\\d{1,5}(?!\\d))?'
 const TAIL = '(?:[/?#][^\\s]*)?'
@@ -23,8 +23,10 @@ const TAIL = '(?:[/?#][^\\s]*)?'
 // A schemed URL's authority: any non-space run up to an RFC 3986 §3.2 delimiter.
 // Deliberately not the LDH grammar above — an ASCII-only host class would truncate
 // IDN hosts ("https://münchen.de" -> "https://m") and drop IPv6 literals
-// ("https://[::1]:8080"). Apostrophes and quotes are never legal in a host, and
-// terminating on them is what keeps suffixed forms out of the domain: Turkish
+// ("https://[::1]:8080"). A quote is not legal in a host; an apostrophe is, as RFC
+// 3986 §2.2 lists it among sub-delims and §3.2.2 admits those to a reg-name -- but no
+// registrable hostname uses one, so terminating on both is a practical rule rather
+// than a normative one. It is what keeps suffixed forms out of the domain: Turkish
 // "https://example.com'dan" links to example.com, not to example.com'dan. They stay
 // legal in the path, which TAIL matches, and an apostrophe followed by an "@" in the
 // same authority is userinfo, not a suffix ("https://o'reilly@example.com"). The two
@@ -35,8 +37,11 @@ const AUTHORITY = "(?:[^\\s/?#'\"‘’“”]|['’](?=[^\\s/?#]*@))+"
 // handle. A deny-list rather than an allow-list, so quotes, brackets, apostrophes and
 // emoji all work without having to enumerate them; emoji and arrows are \p{S} rather
 // than \p{L}, so they still count as a boundary. Excluding letters and digits is what
-// keeps "trailing_example.com" out; "@" keeps "foo@example.com" out, "#" keeps
-// "#example.com" from overlapping the hashtag facet, and "$" keeps cashtags clear.
+// stops a URL being detected part-way through a word; "@" keeps "foo@example.com" out,
+// "#" keeps "#example.com" from overlapping the hashtag facet, and "$" keeps cashtags
+// clear. A "-", "_", "." or "/" is *not* excluded here -- detectFacets rejects those
+// separately for schemeless matches, which is what keeps "trailing_example.com" and
+// "path/to/site.com" out.
 //
 // The classes are Unicode rather than ASCII, which needs the `u` flag below. An
 // ASCII-only boundary treats every accented or non-Latin letter as a separator, so
