@@ -13,56 +13,127 @@ import {
 
 export type Facet = app.bsky.richtext.facet.Main
 
+const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
+
+/**
+ * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
+ * excluded, since example.com/foo_bar and example.com/~user are legitimate endings;
+ * angle brackets are included, being RFC 3986 Appendix C delimiters rather than URI
+ * characters. The typographic marks are legal in an IRI path -- RFC 3987 §2.2 admits
+ * them to iunreserved -- and are stripped from one anyway: ending a match, they are the
+ * prose around a link far more often than part of it, a smart-quoted URL or a
+ * sentence-final ellipsis. AUTHORITY_ONLY_STRIP below strikes the opposite balance for
+ * characters that are common in real paths; the cost here is a path genuinely ending in
+ * one, which is truncated. No `g` flag: this is used with `.test()` on single
+ * characters, which `g` would make stateful.
+ */
+const TRAILING_STRIP_REGEX =
+  /[.,;:!?"<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
+
+/**
+ * Stripped only from an authority. All three are sub-delims or gen-delims that RFC 3986
+ * §3.3 admits to a path, so removing them from one would change where the URL points:
+ * https://example.com/glob/* and https://example.com/foo' are whole URLs.
+ */
+const AUTHORITY_ONLY_STRIP = new Set(['@', "'", '*'])
+
+/** Strips the scheme so the remainder can be tested for authority delimiters. */
+const SCHEME_PREFIX_REGEX = /^https?:\/\//i
+
+const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
+  [')', '('],
+  [']', '['],
+  ['}', '{'],
+])
+
+function countChar(str: string, char: string): number {
+  let n = 0
+  for (const ch of str) {
+    if (ch === char) n++
+  }
+  return n
+}
+
+/**
+ * Strips trailing characters that belong to the surrounding sentence rather than to
+ * the URL. Counting brackets rather than testing for their presence is what lets
+ * example.com/a(b)) lose only the unbalanced ")" while
+ * https://foo.com/thing_(cool) keeps both of its own.
+ */
+function trimTrailing(uri: string): string {
+  let end = uri.length
+  while (end > 0) {
+    const ch = uri[end - 1]
+    if (AUTHORITY_ONLY_STRIP.has(ch)) {
+      // These are legal in a path, so they are only prose punctuation when they end an
+      // authority: "https://example.com@" closes a userinfo and leaves the host empty,
+      // and "https://example.com*" is emphasis around the host. A bare-domain match
+      // never reaches that case -- its tail opens with "/", "?" or "#", so everything
+      // past the host is path, query or fragment -- though such matches do reach here
+      // ("example.com/path@").
+      //
+      // Decided per character rather than once for the whole URI: "?" is both an
+      // authority delimiter and strippable, so stripping one can move a character of
+      // this set into the authority mid-loop.
+      const before = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
+      if (/[/?#]/.test(before)) break
+      end--
+      continue
+    }
+    if (TRAILING_STRIP_REGEX.test(ch)) {
+      end--
+      continue
+    }
+    const open = BRACKET_PAIRS.get(ch)
+    const prefix = uri.slice(0, end)
+    if (open !== undefined && countChar(prefix, open) < countChar(prefix, ch)) {
+      end--
+      continue
+    }
+    break
+  }
+  return uri.slice(0, end)
+}
+
 export function detectFacets(text: UnicodeString): Facet[] | undefined {
   let match
   const facets: Facet[] = []
   {
-    // mentions
-    const re = MENTION_REGEX
-    while ((match = re.exec(text.utf16))) {
-      if (!isValidDomain(match[3]) && !match[3].endsWith('.test')) {
-        continue // probably not a handle
-      }
-
-      const start = text.utf16.indexOf(match[3], match.index) - 1
-      facets.push(
-        app.bsky.richtext.facet.$build({
-          index: {
-            byteStart: text.utf16IndexToUtf8Index(start),
-            byteEnd: text.utf16IndexToUtf8Index(start + match[3].length + 1),
-          },
-          features: [
-            app.bsky.richtext.facet.mention.$build({
-              did: match[3] as DidString, // boundary: detected text must be resolved
-            }),
-          ],
-        }),
-      )
-    }
-  }
-  {
     // links
     const re = URL_REGEX
     while ((match = re.exec(text.utf16))) {
-      let uri = match[2]
-      if (!uri.startsWith('http')) {
-        const domain = match.groups?.domain
-        if (!domain || !isValidDomain(domain)) {
-          continue
-        }
-        uri = `https://${uri}`
-      }
+      const domain = match.groups?.domain
       const start = text.utf16.indexOf(match[2], match.index)
       const index = { start, end: start + match[2].length }
-      // strip ending puncuation
-      if (/[.,;:!?]$/.test(uri)) {
-        uri = uri.slice(0, -1)
-        index.end--
+
+      if (domain) {
+        // Required by the deny-list lead-in of URL_REGEX: a schemeless domain
+        // preceded by "-", "_", "." or "/" is part of a longer token, not a URL --
+        // path/to/site.com, trailing_example.com. This is twitter-text's
+        // invalidUrlWithoutProtocolPrecedingChars. Schemed URLs are exempt.
+        if (/[-_./]/.test(match[1])) {
+          continue
+        }
+        if (!isValidDomain(domain)) {
+          continue
+        }
+        // Heuristic: a bare domain immediately followed by "(" is a method call.
+        // ".now", ".map", ".call" and ".run" are all real TLDs, so performance.now()
+        // and array.map(fn) would otherwise linkify. Costs "example.com(new tab)".
+        if (text.utf16[index.end] === '(') {
+          continue
+        }
       }
-      if (/[)]$/.test(uri) && !uri.includes('(')) {
-        uri = uri.slice(0, -1)
-        index.end--
+
+      const trimmed = trimTrailing(match[2])
+      // A schemed match that trims down to nothing but its scheme ("https://,,,")
+      // is not a link.
+      if (!trimmed || (!domain && SCHEME_ONLY_REGEX.test(trimmed))) {
+        continue
       }
+      index.end = start + trimmed.length
+      const uri = domain ? `https://${trimmed}` : trimmed
+
       facets.push({
         index: {
           byteStart: text.utf16IndexToUtf8Index(index.start),
@@ -74,6 +145,40 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
           }),
         ],
       })
+    }
+  }
+  {
+    // mentions
+    const re = MENTION_REGEX
+    while ((match = re.exec(text.utf16))) {
+      // A "/" before the "@" means the handle sits in a URL path
+      // (https://example.com/@bsky.app), not a mention. MENTION_REGEX's lead-in admits
+      // it, and the facet would overlap the link facet the same text produces.
+      if (match[1].startsWith('/')) {
+        continue
+      }
+      if (
+        !isValidDomain(match[3]) &&
+        !match[3].toLowerCase().endsWith('.test')
+      ) {
+        continue // probably not a handle
+      }
+
+      const start = text.utf16.indexOf(match[3], match.index) - 1
+      const end = start + match[3].length + 1
+      facets.push(
+        app.bsky.richtext.facet.$build({
+          index: {
+            byteStart: text.utf16IndexToUtf8Index(start),
+            byteEnd: text.utf16IndexToUtf8Index(end),
+          },
+          features: [
+            app.bsky.richtext.facet.mention.$build({
+              did: match[3] as DidString, // boundary: detected text must be resolved
+            }),
+          ],
+        }),
+      )
     }
   }
   {
@@ -135,15 +240,34 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       })
     }
   }
-  return facets.length > 0 ? facets : undefined
+  // Facet ranges must not overlap: a consumer walking them in order -- segments()
+  // among them -- silently drops the second of any overlapping pair, so an overlap
+  // corrupts the record invisibly. Detection order above is precedence order and links
+  // run first, so a handle or cashtag inside a URL ("example.com/($AAPL)") loses.
+  const kept: Facet[] = []
+  for (const facet of facets) {
+    const { byteStart, byteEnd } = facet.index
+    const overlaps = kept.some(
+      (k) => byteStart < k.index.byteEnd && byteEnd > k.index.byteStart,
+    )
+    if (!overlaps) kept.push(facet)
+  }
+
+  return kept.length > 0 ? kept : undefined
 }
 
+const TLD_SET = new Set(TLDs.map((tld) => tld.toLowerCase()))
+
+/**
+ * A domain is valid when its final label is a known TLD. The comparison folds ASCII
+ * case, per RFC 4343: DNS case-insensitivity is a property of comparison, not of
+ * storage. The set keeps this an O(1) lookup over ~1,400 TLDs, which matters on every
+ * keystroke in a composer.
+ */
 function isValidDomain(str: string): boolean {
-  return !!TLDs.find((tld) => {
-    const i = str.lastIndexOf(tld)
-    if (i === -1) {
-      return false
-    }
-    return str.charAt(i - 1) === '.' && i === str.length - tld.length
-  })
+  const i = str.lastIndexOf('.')
+  if (i === -1) {
+    return false
+  }
+  return TLD_SET.has(str.slice(i + 1).toLowerCase())
 }
