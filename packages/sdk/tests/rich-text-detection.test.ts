@@ -682,6 +682,15 @@ const linkCases: [string, [string, string][]][] = [
     'https://example.com/#@',
     [['https://example.com/#@', 'https://example.com/#@']],
   ],
+  // Which component the "@" sits in is decided per "@", not once per URL: stripping
+  // the trailing "?" moves it into the authority in the first two and leaves it in
+  // the path in the third.
+  ['https://example.com@?', [['https://example.com', 'https://example.com']]],
+  ['https://example.com@??', [['https://example.com', 'https://example.com']]],
+  [
+    'https://example.com/path@?',
+    [['https://example.com/path@', 'https://example.com/path@']],
+  ],
 
   // The host grammar is ASCII by construction, not by an `i` flag: under Unicode
   // case-folding /[a-z]/iu also matches U+017F and U+212A, which would admit these

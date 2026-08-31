@@ -51,15 +51,21 @@ function countChar(str: string, char: string): number {
  */
 function trimTrailing(uri: string): string {
   let end = uri.length
-  // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, and by extension in a
-  // query and a fragment. Only a trailing "@" in the authority is meaningless, where
-  // it is empty userinfo. A bare-domain match never reaches this: its tail has to
-  // start with "/", "?" or "#", so an "@" cannot be inside the match.
-  const inAuthority = !/[/?#]/.test(uri.replace(SCHEME_PREFIX_REGEX, ''))
   while (end > 0) {
     const ch = uri[end - 1]
     if (ch === '@') {
-      if (!inAuthority) break
+      // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, and by extension
+      // in a query and a fragment. Only a trailing "@" in the authority is
+      // meaningless, where it is empty userinfo. A bare-domain match never reaches
+      // this: its tail has to start with "/", "?" or "#", so an "@" cannot be inside
+      // the match.
+      //
+      // Decided here rather than once before the loop: the loop may have already
+      // stripped a trailing "?", which is both an authority delimiter and strippable
+      // punctuation, so a verdict cached over the whole URI goes stale. What matters
+      // is whether a delimiter precedes *this* "@".
+      const beforeAt = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
+      if (/[/?#]/.test(beforeAt)) break
       end--
       continue
     }
