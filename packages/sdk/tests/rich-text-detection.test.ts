@@ -568,6 +568,15 @@ const linkCases: [string, [string, string][]][] = [
     'xn--80ak6aa92e.com test',
     [['xn--80ak6aa92e.com', 'https://xn--80ak6aa92e.com']],
   ],
+  // A punycoded *final* label. The TLD list spells an internationalised TLD as its
+  // U-label ("рф"), which ASCII text never carries, so the set holds the A-label.
+  ['example.xn--p1ai', [['example.xn--p1ai', 'https://example.xn--p1ai']]],
+  [
+    'xn--80ak6aa92e.xn--p1ai',
+    [['xn--80ak6aa92e.xn--p1ai', 'https://xn--80ak6aa92e.xn--p1ai']],
+  ],
+  // Still an exact comparison: "xn--" is not a licence to invent a TLD.
+  ['example.xn--fake', []],
   // A link: every label is LDH-conformant and ".com" is a real TLD.
   ['v1.2-example.com', [['v1.2-example.com', 'https://v1.2-example.com']]],
   // No leading or trailing hyphen in a label.
@@ -575,9 +584,10 @@ const linkCases: [string, [string, string][]][] = [
   ['bad-.com', []],
 
   // Digit-leading and single-digit first labels. These are all live sites: 1.org,
-  // 404media.co and 7.zip. What keeps the negatives below plain is the
-  // all-numeric-TLD rule (RFC 1123 §2.1, restated in RFC 3696 §2), not the first
-  // label -- note 192.com and 192.168.1.1 differ only in their final label.
+  // 404media.co and 7.zip. What keeps the negatives below plain is the final label,
+  // never the first -- note 192.com and 192.168.1.1 differ only in their last. "1" and
+  // "99" are absent from the TLD set because RFC 1123 §2.1, restated in RFC 3696 §2,
+  // rules out an all-numeric TLD; "30am" is simply not a TLD.
   ['1.org', [['1.org', 'https://1.org']]],
   ['404media.co', [['404media.co', 'https://404media.co']]],
   ['192.com', [['192.com', 'https://192.com']]],
@@ -595,7 +605,8 @@ const linkCases: [string, [string, string][]][] = [
   ['see example.com* for more', [['example.com', 'https://example.com']]],
   ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
 
-  // Brackets are balanced rather than merely absent.
+  // Excess trailing closers are stripped, rather than every bracket regardless. An
+  // unmatched opener inside the match is left alone -- the trim only ever shortens.
   [
     'nested (example.com/a(b)) done',
     [['example.com/a(b)', 'https://example.com/a(b)']],
@@ -812,6 +823,9 @@ const mentionCases: [string, [string, string][]][] = [
   ['josé@example.com', []],
   ['josé@example.com'.normalize('NFD'), []],
   ['мария@example.com', []],
+  // An internationalised handle can only be written as an A-label: @atproto/syntax
+  // admits [a-zA-Z0-9.-] alone.
+  ['@alice.xn--p1ai hi', [['@alice.xn--p1ai', 'alice.xn--p1ai']]],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]

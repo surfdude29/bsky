@@ -59,6 +59,11 @@ function countChar(str: string, char: string): number {
  * the URL. Counting brackets rather than testing for their presence is what lets
  * example.com/a(b)) lose only the unbalanced ")" while
  * https://foo.com/thing_(cool) keeps both of its own.
+ *
+ * Excess closers are all it removes. The loop only ever shortens, so an unmatched
+ * *opener* stays (example.com/path( keeps its "(") and nesting is never checked
+ * (example.com/a([)] keeps its crossed pair). Neither ends a sentence, which is the
+ * only thing this is for.
  */
 function trimTrailing(uri: string): string {
   let end = uri.length
@@ -256,7 +261,28 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
   return kept.length > 0 ? kept : undefined
 }
 
-const TLD_SET = new Set(TLDs.map((tld) => tld.toLowerCase()))
+/**
+ * Known TLDs, as A-labels. The `tlds` package spells an internationalised TLD as its
+ * Unicode U-label -- "рф", not "xn--p1ai" -- but every candidate reaching
+ * isValidDomain is ASCII, since URL_REGEX's label grammar and MENTION_REGEX's handle
+ * class both are, so a U-label could never match one. Each is converted to the punycode
+ * A-label that such a name is written as in ASCII text; for a handle that is the only
+ * legal spelling, @atproto/syntax admitting [a-zA-Z0-9.-] alone. Conversion is one pass
+ * at module load (~1.5ms over ~1,400 entries), not per keystroke -- isValidDomain stays
+ * an O(1) lookup. A runtime whose URL parser does not implement IDNA keeps the U-label,
+ * which is unreachable, leaving that runtime exactly where it is today.
+ */
+const TLD_SET = new Set(
+  TLDs.map((tld) => {
+    const lower = tld.toLowerCase()
+    if (!/\P{ASCII}/u.test(lower)) return lower
+    try {
+      return new URL(`https://${lower}`).hostname
+    } catch {
+      return lower
+    }
+  }),
+)
 
 /**
  * A domain is valid when its final label is a known TLD. The comparison folds ASCII
