@@ -19,8 +19,13 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
  * excluded, since example.com/foo_bar and example.com/~user are legitimate endings;
  * angle brackets are included, being RFC 3986 Appendix C delimiters rather than URI
- * characters. No `g` flag: this is used with `.test()` on single characters, which `g`
- * would make stateful.
+ * characters. The typographic marks are legal in an IRI path -- RFC 3987 §2.2 admits
+ * them to iunreserved -- and are stripped from one anyway: ending a match, they are the
+ * prose around a link far more often than part of it, a smart-quoted URL or a
+ * sentence-final ellipsis. AUTHORITY_ONLY_STRIP below strikes the opposite balance for
+ * characters that are common in real paths; the cost here is a path genuinely ending in
+ * one, which is truncated. No `g` flag: this is used with `.test()` on single
+ * characters, which `g` would make stateful.
  */
 const TRAILING_STRIP_REGEX =
   /[.,;:!?"<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/

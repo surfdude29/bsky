@@ -588,8 +588,11 @@ const linkCases: [string, [string, string][]][] = [
   ['it costs 4.99 total', []],
   ['See Section 4. In the box.', []],
 
-  // Run-on: the authority ends at "/", "?", "#" or end of input (RFC 3986 §3.2),
-  // so prose that follows without a space is outside the match.
+  // Run-on: a bare domain is matched as dot-separated LDH labels, an optional port and
+  // a tail that opens at "/", "?" or "#", so prose running straight on is outside the
+  // match. A schemed
+  // URL is not bound this way -- a comma is a sub-delim and legal in a reg-name, so
+  // https://example.com,then is a single match.
   ['go to example.com,then click', [['example.com', 'https://example.com']]],
   ['see example.com* for more', [['example.com', 'https://example.com']]],
   ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
@@ -661,8 +664,8 @@ const linkCases: [string, [string, string][]][] = [
     [['example.com:99999/ok', 'https://example.com:99999/ok']],
   ],
 
-  // A trailing "@" in the authority is empty userinfo, and angle brackets are RFC
-  // 3986 Appendix C delimiters, so neither belongs to the URL.
+  // A trailing "@" closes a userinfo and leaves the host empty, and angle brackets are
+  // RFC 3986 Appendix C delimiters, so neither belongs to the URL.
   [
     'https://totallynotseth.dev@',
     [['https://totallynotseth.dev', 'https://totallynotseth.dev']],
@@ -695,6 +698,21 @@ const linkCases: [string, [string, string][]][] = [
   [
     'https://totallynotseth.dev*',
     [['https://totallynotseth.dev', 'https://totallynotseth.dev']],
+  ],
+  // The typographic marks are legal in an IRI path (RFC 3987 §2.2) and stripped from
+  // one regardless, being the prose around a link far more often than part of it.
+  [
+    '“https://example.com/foo”',
+    [['https://example.com/foo', 'https://example.com/foo']],
+  ],
+  [
+    'see https://example.com/foo… ok',
+    [['https://example.com/foo', 'https://example.com/foo']],
+  ],
+  // The cost of that: a path that really does end in one is truncated.
+  [
+    'https://example.com/a’',
+    [['https://example.com/a', 'https://example.com/a']],
   ],
   // Which component the "@" sits in is decided per "@", not once per URL: stripping
   // the trailing "?" moves it into the authority in the first two and leaves it in
