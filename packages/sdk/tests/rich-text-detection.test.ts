@@ -519,3 +519,233 @@ describe('RichText.resolve', () => {
     expect(rt.facets).toBeUndefined()
   })
 })
+
+/** Every link facet as [matched text, uri], so byte offsets are covered too. */
+const links = (text: string): [string, string][] => {
+  const rt = new RichText({ text })
+  rt.detectFacetsWithoutResolution()
+  return Array.from(rt.segments())
+    .filter((s) => s.link)
+    .map((s) => [s.text, s.link!.uri])
+}
+
+/** Every mention facet as [matched text, handle]. */
+const mentions = (text: string): [string, string][] => {
+  const rt = new RichText({ text })
+  rt.detectFacetsWithoutResolution()
+  return Array.from(rt.segments())
+    .filter((s) => s.mention)
+    .map((s) => [s.text, s.mention!.did])
+}
+
+describe('detectFacets link detection', () => {
+  const cases: [string, [string, string][]][] = [
+    // Case folding. The TLD list is all lowercase and the scheme test used to be
+    // `startsWith('http')`, so neither of these linked before.
+    [
+      'HTTPS://EXAMPLE.COM/Path',
+      [['HTTPS://EXAMPLE.COM/Path', 'HTTPS://EXAMPLE.COM/Path']],
+    ],
+    ['visit Example.Com', [['Example.Com', 'https://Example.Com']]],
+    ['BSKY.APP', [['BSKY.APP', 'https://BSKY.APP']]],
+
+    // Hyphens in labels (RFC 1123 §2.1), including punycode A-labels.
+    [
+      'my-site.example.com is up',
+      [['my-site.example.com', 'https://my-site.example.com']],
+    ],
+    ['a--b.com', [['a--b.com', 'https://a--b.com']]],
+    [
+      'xn--80ak6aa92e.com test',
+      [['xn--80ak6aa92e.com', 'https://xn--80ak6aa92e.com']],
+    ],
+    // Also newly a link: every label is LDH-conformant and ".com" is a real TLD.
+    ['v1.2-example.com', [['v1.2-example.com', 'https://v1.2-example.com']]],
+    // No leading or trailing hyphen in a label.
+    ['-bad.com', []],
+    ['bad-.com', []],
+
+    // Digit-leading and single-digit first labels. These are all live sites, so do
+    // not "fix" this by rejecting them: 7.zip, 5.st and 3.uk are live short-link and
+    // carrier domains on the same rule. What keeps the negatives below plain is the
+    // all-numeric-TLD rule (RFC 1123 §2.1, restated in RFC 3696 §2), not the first
+    // label -- note 192.com and 192.168.1.1 differ only in their final label.
+    ['1.org', [['1.org', 'https://1.org']]],
+    ['404media.co', [['404media.co', 'https://404media.co']]],
+    ['192.com', [['192.com', 'https://192.com']]],
+    [
+      'short link 7.zip/AbC123 here',
+      [['7.zip/AbC123', 'https://7.zip/AbC123']],
+    ],
+    ['ping 192.168.1.1 now', []],
+    ['meet at 12.30am tomorrow', []],
+    ['it costs 4.99 total', []],
+    ['See Section 4. In the box.', []],
+
+    // Run-on: the authority ends at "/", "?", "#" or end of input (RFC 3986 §3.2),
+    // so prose that follows without a space is no longer swallowed.
+    ['go to example.com,then click', [['example.com', 'https://example.com']]],
+    ['see example.com* for more', [['example.com', 'https://example.com']]],
+    ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
+
+    // Brackets are balanced rather than merely absent.
+    [
+      'nested (example.com/a(b)) done',
+      [['example.com/a(b)', 'https://example.com/a(b)']],
+    ],
+    ['[example.com/x] bracketed', [['example.com/x', 'https://example.com/x']]],
+    ['quote "example.com" end', [['example.com', 'https://example.com']]],
+    [
+      'except for https://foo.com/thing_(cool)',
+      [['https://foo.com/thing_(cool)', 'https://foo.com/thing_(cool)']],
+    ],
+
+    // Method calls. ".now", ".map" and ".next" are all real TLDs, so these used to
+    // linkify. Heuristic: a bare domain followed immediately by "(" is not a URL.
+    ['performance.now() is fast', []],
+    ['array.map(fn) works', []],
+    ['router.next() called', []],
+    // The heuristic is scoped to schemeless matches.
+    [
+      'https://example.com(x)',
+      [['https://example.com(x)', 'https://example.com(x)']],
+    ],
+
+    // Port and fragment stay inside the match.
+    [
+      'example.com:8080/health',
+      [['example.com:8080/health', 'https://example.com:8080/health']],
+    ],
+    [
+      'example.com#section',
+      [['example.com#section', 'https://example.com#section']],
+    ],
+    [
+      'http://localhost:3000/api',
+      [['http://localhost:3000/api', 'http://localhost:3000/api']],
+    ],
+
+    // Lead-in is a deny-list, so anything that is not alphanumeric, "@", "#" or "$"
+    // may precede a link -- emoji and arrows included, which no allow-list covers.
+    [
+      '\u{1F517}https://example.com/',
+      [['https://example.com/', 'https://example.com/']],
+    ],
+    ['\u{1F517}example.com', [['example.com', 'https://example.com']]],
+    ['emoji\u{1F389}bsky.app here', [['bsky.app', 'https://bsky.app']]],
+    ['→https://example.com', [['https://example.com', 'https://example.com']]],
+    // ...and what the excluded set plus the schemeless guard keep out.
+    ['path/to/site.com here', []],
+    ['trailing_example.com', []],
+    ['foo@example.com is my email', []],
+    ['#example.com tag', []],
+    ['$AAPL example.com', [['example.com', 'https://example.com']]],
+  ]
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets does not truncate schemed URLs', () => {
+  // The host of a schemed URL is deliberately not held to the ASCII LDH grammar
+  // used for bare domains: an ASCII-only host class would cut IDN hosts down to
+  // their first label and drop IPv6 literals entirely.
+  const cases: [string, [string, string][]][] = [
+    [
+      'https://münchen.de/straße',
+      [['https://münchen.de/straße', 'https://münchen.de/straße']],
+    ],
+    [
+      'see https://例え.jp/foo here',
+      [['https://例え.jp/foo', 'https://例え.jp/foo']],
+    ],
+    [
+      'https://[::1]:8080/api',
+      [['https://[::1]:8080/api', 'https://[::1]:8080/api']],
+    ],
+    [
+      'https://ru.wikipedia.org/wiki/Кот',
+      [
+        [
+          'https://ru.wikipedia.org/wiki/Кот',
+          'https://ru.wikipedia.org/wiki/Кот',
+        ],
+      ],
+    ],
+    [
+      'https://user@example.com/x',
+      [['https://user@example.com/x', 'https://user@example.com/x']],
+    ],
+    // A match that trims down to nothing but its scheme is not a link.
+    ['https://,,,', []],
+    ['(https://)', []],
+  ]
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets does not swallow apostrophe suffixes', () => {
+  // social-app issue 8164: "example.com'dan" is Turkish for "from
+  // example.com". The apostrophe and the suffix used to be absorbed into the host,
+  // producing a link to https://example.xn--comdan-5h0c.
+  const cases: [string, [string, string][]][] = [
+    ["example.com'dan", [['example.com', 'https://example.com']]],
+    ['example.com’dan', [['example.com', 'https://example.com']]],
+    [
+      "https://example.com'dan",
+      [['https://example.com', 'https://example.com']],
+    ],
+    [
+      'https://example.com’dan',
+      [['https://example.com', 'https://example.com']],
+    ],
+    ["bsky.app'de yayınlandı", [['bsky.app', 'https://bsky.app']]],
+    [
+      "example.com'dan bsky.app'e",
+      [
+        ['example.com', 'https://example.com'],
+        ['bsky.app', 'https://bsky.app'],
+      ],
+    ],
+    ["GitHub.com'a git", [['GitHub.com', 'https://GitHub.com']]],
+    // Only the authority stops at an apostrophe; it stays legal in a path.
+    [
+      "https://example.com/it's-fine",
+      [["https://example.com/it's-fine", "https://example.com/it's-fine"]],
+    ],
+  ]
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets mention detection', () => {
+  const cases: [string, [string, string][]][] = [
+    // social-app issue 7341: a handle after an apostrophe.
+    [
+      'l’@alice.bsky.social a dit',
+      [['@alice.bsky.social', 'alice.bsky.social']],
+    ],
+    ["l'@bob.bsky.social", [['@bob.bsky.social', 'bob.bsky.social']]],
+    // The Twitter-style leading ".@" now works too.
+    ['.@alice.bsky.social hi', [['@alice.bsky.social', 'alice.bsky.social']]],
+    [
+      '\u{1F517}@alice.bsky.social hi',
+      [['@alice.bsky.social', 'alice.bsky.social']],
+    ],
+    // Non-regressions.
+    ['not@right', []],
+    ['@handle.com!@#$chars', [['@handle.com', 'handle.com']]],
+    // A handle in a URL path is part of the URL, not a mention -- without the
+    // guard this facet would overlap the link facet the same text produces.
+    ['https://example.com/@bsky.app', []],
+  ]
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(mentions(input)).toEqual(expected)
+  })
+})
