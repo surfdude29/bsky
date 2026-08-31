@@ -16,12 +16,11 @@ export type Facet = app.bsky.richtext.facet.Main
 const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
- * Characters that end prose rather than a URL. Deliberately excludes "_" and "~":
- * example.com/foo_bar and example.com/~user are legitimate endings. Angle brackets are
- * RFC 3986 Appendix C delimiters rather than URI characters, so they cannot end a URL.
- * "@" is handled separately below, because it is only meaningless in the authority.
- * Must not carry the `g` flag -- it is used with `.test()` on single characters below,
- * and `g` would make `.test()` stateful.
+ * Characters that end prose rather than a URL. "_" and "~" are excluded, since
+ * example.com/foo_bar and example.com/~user are legitimate endings; angle brackets are
+ * included, being RFC 3986 Appendix C delimiters rather than URI characters. "@" is
+ * handled separately below, being meaningless only in the authority. No `g` flag: this
+ * is used with `.test()` on single characters, which `g` would make stateful.
  */
 const TRAILING_STRIP_REGEX =
   /[.,;:!?'"*<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
@@ -54,17 +53,15 @@ function trimTrailing(uri: string): string {
   while (end > 0) {
     const ch = uri[end - 1]
     if (ch === '@') {
-      // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, and by extension
-      // in a query and a fragment. Only a trailing "@" in the authority is
-      // meaningless, where it is empty userinfo. The bare-domain branch cannot
-      // produce one: its tail has to open with "/", "?" or "#", so everything after
-      // the host is path, query or fragment. Such a match does reach this branch --
-      // "example.com/path@" is one -- it simply never carries an authority "@".
+      // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, query or
+      // fragment; only a trailing one in the authority is meaningless, being empty
+      // userinfo. A bare-domain match never carries an authority "@" -- its tail
+      // opens with "/", "?" or "#", so everything past the host is path, query or
+      // fragment -- though such matches do reach here ("example.com/path@").
       //
-      // Decided here rather than once before the loop: the loop may have already
-      // stripped a trailing "?", which is both an authority delimiter and strippable
-      // punctuation, so a verdict cached over the whole URI goes stale. What matters
-      // is whether a delimiter precedes *this* "@".
+      // Decided per "@" rather than once before the loop, where it would go stale:
+      // "?" is both an authority delimiter and strippable, so stripping one can move
+      // an "@" into the authority.
       const beforeAt = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
       if (/[/?#]/.test(beforeAt)) break
       end--
@@ -107,10 +104,9 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         if (!isValidDomain(domain)) {
           continue
         }
-        // Heuristic: a bare domain immediately followed by "(" is a method call,
-        // not a URL. ".now", ".map", ".next", ".call" and ".run" are all real
-        // TLDs, so performance.now() and array.map(fn) would otherwise linkify.
-        // Costs "visit example.com(new tab)"; schemed URLs are unaffected.
+        // Heuristic: a bare domain immediately followed by "(" is a method call.
+        // ".now", ".map", ".call" and ".run" are all real TLDs, so performance.now()
+        // and array.map(fn) would otherwise linkify. Costs "example.com(new tab)".
         if (text.utf16[index.end] === '(') {
           continue
         }
@@ -232,11 +228,10 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       })
     }
   }
-  // Facet ranges must not overlap. A consumer that walks them in order -- segments()
+  // Facet ranges must not overlap: a consumer walking them in order -- segments()
   // among them -- silently drops the second of any overlapping pair, so an overlap
-  // corrupts the record invisibly rather than visibly. Detection order above is the
-  // precedence order, and links run first, so a handle or a cashtag written inside a
-  // URL (https://example.com/?q=@bsky.app, https://example.com/($AAPL)) loses to it.
+  // corrupts the record invisibly. Detection order above is precedence order and links
+  // run first, so a handle or cashtag inside a URL ("example.com/($AAPL)") loses.
   const kept: Facet[] = []
   for (const facet of facets) {
     const { byteStart, byteEnd } = facet.index
@@ -252,12 +247,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
 const TLD_SET = new Set(TLDs.map((tld) => tld.toLowerCase()))
 
 /**
- * The TLD list carries no dotted entries, so requiring the TLD to be preceded by a
- * dot and to sit at the end of the string -- as this predicate used to -- can only
- * ever match the final label. Taking that label directly is equivalent, adds ASCII
- * case folding (RFC 4343: DNS case-insensitivity is a property of comparison, not
- * of storage) and turns a linear scan over ~1,400 TLDs into an O(1) lookup, which
- * matters because this runs on every keystroke in a composer.
+ * The TLD list has no dotted entries, so the old predicate -- TLD preceded by a dot and
+ * ending the string -- could only ever match the final label. Taking that label
+ * directly is equivalent, adds ASCII case folding (RFC 4343: DNS case-insensitivity is
+ * a property of comparison, not of storage), and turns a scan of ~1,400 TLDs into an
+ * O(1) lookup, which matters on every keystroke in a composer.
  */
 function isValidDomain(str: string): boolean {
   const i = str.lastIndexOf('.')
