@@ -268,9 +268,9 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
  * class both are, so a U-label could never match one. Each is converted to the punycode
  * A-label that such a name is written as in ASCII text; for a handle that is the only
  * legal spelling, @atproto/syntax admitting [a-zA-Z0-9.-] alone. Conversion is one pass
- * at module load (~1.5ms over ~1,400 entries), not per keystroke -- isValidDomain stays
- * an O(1) lookup. A runtime whose URL parser does not implement IDNA keeps the U-label,
- * which is unreachable, leaving that runtime exactly where it is today.
+ * at module load rather than per keystroke, so isValidDomain stays an O(1) lookup. On a
+ * runtime whose URL parser does not implement IDNA the U-label is kept, and that TLD
+ * goes unrecognised rather than the set being wrong.
  */
 const TLD_SET = new Set(
   TLDs.map((tld) => {
