@@ -574,9 +574,8 @@ const linkCases: [string, [string, string][]][] = [
   ['-bad.com', []],
   ['bad-.com', []],
 
-  // Digit-leading and single-digit first labels. These are all live sites, so do
-  // not "fix" this by rejecting them: 7.zip, 5.st and 3.uk are live short-link and
-  // carrier domains on the same rule. What keeps the negatives below plain is the
+  // Digit-leading and single-digit first labels. These are all live sites: 1.org, 
+  // 404media.co and 7.zip. What keeps the negatives below plain is the 
   // all-numeric-TLD rule (RFC 1123 §2.1, restated in RFC 3696 §2), not the first
   // label -- note 192.com and 192.168.1.1 differ only in their final label.
   ['1.org', [['1.org', 'https://1.org']]],
@@ -590,9 +589,8 @@ const linkCases: [string, [string, string][]][] = [
 
   // Run-on: a bare domain is matched as dot-separated LDH labels, an optional port and
   // a tail that opens at "/", "?" or "#", so prose running straight on is outside the
-  // match. A schemed
-  // URL is not bound this way -- a comma is a sub-delim and legal in a reg-name, so
-  // https://example.com,then is a single match.
+  // match. A schemed URL is not bound this way -- a comma is a sub-delim and legal in
+  // a reg-name, so https://example.com,then is a single match.
   ['go to example.com,then click', [['example.com', 'https://example.com']]],
   ['see example.com* for more', [['example.com', 'https://example.com']]],
   ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
@@ -667,8 +665,8 @@ const linkCases: [string, [string, string][]][] = [
   // A trailing "@" closes a userinfo and leaves the host empty, and angle brackets are
   // RFC 3986 Appendix C delimiters, so neither belongs to the URL.
   [
-    'https://totallynotseth.dev@',
-    [['https://totallynotseth.dev', 'https://totallynotseth.dev']],
+    'https://example.com@',
+    [['https://example.com', 'https://example.com']],
   ],
   ['<https://example.com>', [['https://example.com', 'https://example.com']]],
   // ...but RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, a query and a
@@ -696,8 +694,8 @@ const linkCases: [string, [string, string][]][] = [
     [['https://example.com/glob/*', 'https://example.com/glob/*']],
   ],
   [
-    'https://totallynotseth.dev*',
-    [['https://totallynotseth.dev', 'https://totallynotseth.dev']],
+    'https://example.com*',
+    [['https://example.com', 'https://example.com']],
   ],
   // The typographic marks are legal in an IRI path (RFC 3987 §2.2) and stripped from
   // one regardless, being the prose around a link far more often than part of it.
@@ -754,11 +752,11 @@ const schemedCases: [string, [string, string][]][] = [
     [['https://[::1]:8080/api', 'https://[::1]:8080/api']],
   ],
   [
-    'https://ru.wikipedia.org/wiki/Кот',
+    'https://ru.wikipedia.org/wiki/Кошка',
     [
       [
-        'https://ru.wikipedia.org/wiki/Кот',
-        'https://ru.wikipedia.org/wiki/Кот',
+        'https://ru.wikipedia.org/wiki/Кошка',
+        'https://ru.wikipedia.org/wiki/Кошка',
       ],
     ],
   ],
@@ -801,13 +799,13 @@ const apostropheCases: [string, [string, string][]][] = [
 
 const mentionCases: [string, [string, string][]][] = [
   // social-app issue 7341: a handle after an apostrophe.
-  ['l’@alice.bsky.social a dit', [['@alice.bsky.social', 'alice.bsky.social']]],
-  ["l'@bob.bsky.social", [['@bob.bsky.social', 'bob.bsky.social']]],
+  ['l’@bsky.app a dit', [['@bsky.app', 'bsky.app']]],
+  ["l'@atproto.com", [['@atproto.com', 'atproto.com']]],
   // The Twitter-style leading ".@" is a mention too.
-  ['.@alice.bsky.social hi', [['@alice.bsky.social', 'alice.bsky.social']]],
+  ['.@bsky.app hi', [['@bsky.app', 'bsky.app']]],
   [
-    '\u{1F517}@alice.bsky.social hi',
-    [['@alice.bsky.social', 'alice.bsky.social']],
+    '\u{1F517}@bsky.app hi',
+    [['@bsky.app', 'bsky.app']],
   ],
   // Non-regressions.
   ['not@right', []],
