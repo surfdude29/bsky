@@ -1,12 +1,17 @@
 // LDH label per RFC 1035 §2.3.1 as amended by RFC 1123 §2.1: letters, digits and
-// hyphens, no leading or trailing hyphen. Written as [a-z0-9]+(?:-+[a-z0-9]+)*
-// rather than [a-z0-9](?:[a-z0-9-]*[a-z0-9])? so the pattern is unambiguous and
-// cannot backtrack. The `-+` (not `-`) keeps punycode A-labels such as
+// hyphens, no leading or trailing hyphen. Written as [A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*
+// rather than [A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])? so the pattern is unambiguous
+// and cannot backtrack. The `-+` (not `-`) keeps punycode A-labels such as
 // xn--80ak6aa92e working.
-const LABEL = '[a-z0-9]+(?:-+[a-z0-9]+)*'
+//
+// Both cases are spelled out rather than left to an `i` flag. Under Unicode
+// case-folding -- which the `u` flag below brings with it -- /[a-z]/iu also matches
+// U+017F and U+212A, so an `i` flag would quietly admit "\u017F.com" and "\u212A.com"
+// to a grammar documented as ASCII-LDH, and "http\u017F://" as a scheme.
+const LABEL = '[A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*'
 
-// A schemeless host must carry at least one dot.
-const DOMAIN = `${LABEL}(?:\\.${LABEL})+`
+// Spelled out for the same reason as LABEL.
+const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
 
 // RFC 3986 §3.2: the authority ends at "/", "?", "#" or end of input. The port is
 // part of the authority, so ":" is handled here and not treated as a terminator.
@@ -47,14 +52,19 @@ const LEAD = '(^|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)'
 
 export const MENTION_REGEX =
   /(^|[^\p{L}\p{N}\p{M}@#$]\p{M}*)(@)([a-zA-Z0-9.-]+)(\b)/gu
+// The branch alternatives are capturing so the numbered groups keep the meanings they
+// had before this grammar was rewritten: 1 the preceding character, 2 the whole match,
+// 3 a schemed URL, 4 a bare domain with its tail, 5 the host, 6 its last dot-label.
+// detectFacets reads only 1, 2 and `groups.domain`; the rest exist for consumers of
+// the exported regex.
 export const URL_REGEX = new RegExp(
   LEAD +
     '(' +
-    `https?:\\/\\/${AUTHORITY}${TAIL}` +
+    `(${SCHEME}:\\/\\/${AUTHORITY}${TAIL})` +
     '|' +
-    `(?<domain>${DOMAIN})${PORT}${TAIL}` +
+    `((?<domain>${LABEL}(\\.${LABEL})+)${PORT}${TAIL})` +
     ')',
-  'gimu',
+  'gmu',
 )
 export const TRAILING_PUNCTUATION_REGEX = /\p{P}+$/gu
 

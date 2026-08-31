@@ -17,13 +17,17 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
  * Characters that end prose rather than a URL. Deliberately excludes "_" and "~":
- * example.com/foo_bar and example.com/~user are legitimate endings. A trailing "@" is
- * empty userinfo, and angle brackets are RFC 3986 Appendix C delimiters rather than
- * URI characters, so neither can end a URL. Must not carry the `g` flag -- it is used
- * with `.test()` on single characters below, and `g` would make `.test()` stateful.
+ * example.com/foo_bar and example.com/~user are legitimate endings. Angle brackets are
+ * RFC 3986 Appendix C delimiters rather than URI characters, so they cannot end a URL.
+ * "@" is handled separately below, because it is only meaningless in the authority.
+ * Must not carry the `g` flag -- it is used with `.test()` on single characters below,
+ * and `g` would make `.test()` stateful.
  */
 const TRAILING_STRIP_REGEX =
-  /[.,;:!?'"*@<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
+  /[.,;:!?'"*<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
+
+/** Strips the scheme so the remainder can be tested for authority delimiters. */
+const SCHEME_PREFIX_REGEX = /^https?:\/\//i
 
 const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
   [')', '('],
@@ -47,8 +51,18 @@ function countChar(str: string, char: string): number {
  */
 function trimTrailing(uri: string): string {
   let end = uri.length
+  // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, and by extension in a
+  // query and a fragment. Only a trailing "@" in the authority is meaningless, where
+  // it is empty userinfo. A bare-domain match never reaches this: its tail has to
+  // start with "/", "?" or "#", so an "@" cannot be inside the match.
+  const inAuthority = !/[/?#]/.test(uri.replace(SCHEME_PREFIX_REGEX, ''))
   while (end > 0) {
     const ch = uri[end - 1]
+    if (ch === '@') {
+      if (!inAuthority) break
+      end--
+      continue
+    }
     if (TRAILING_STRIP_REGEX.test(ch)) {
       end--
       continue
@@ -67,9 +81,6 @@ function trimTrailing(uri: string): string {
 export function detectFacets(text: UnicodeString): Facet[] | undefined {
   let match
   const facets: Facet[] = []
-  // Ranges of the link facets emitted below, in UTF-16 indices; the mention pass
-  // consults them so the two cannot produce overlapping facets.
-  const linkRanges: [number, number][] = []
   {
     // links
     const re = URL_REGEX
@@ -106,7 +117,6 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       }
       index.end = start + trimmed.length
       const uri = domain ? `https://${trimmed}` : trimmed
-      linkRanges.push([index.start, index.end])
 
       facets.push({
         index: {
@@ -141,12 +151,6 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
 
       const start = text.utf16.indexOf(match[3], match.index) - 1
       const end = start + match[3].length + 1
-      // A handle inside a URL belongs to that URL -- https://example.com/?q=@bsky.app
-      // is one link, not a link and a mention. Facet ranges must not overlap, and
-      // segments() silently drops the second of two that do.
-      if (linkRanges.some(([from, to]) => start < to && end > from)) {
-        continue
-      }
       facets.push(
         app.bsky.richtext.facet.$build({
           index: {
@@ -221,7 +225,21 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       })
     }
   }
-  return facets.length > 0 ? facets : undefined
+  // Facet ranges must not overlap. A consumer that walks them in order -- segments()
+  // among them -- silently drops the second of any overlapping pair, so an overlap
+  // corrupts the record invisibly rather than visibly. Detection order above is the
+  // precedence order, and links run first, so a handle or a cashtag written inside a
+  // URL (https://example.com/?q=@bsky.app, https://example.com/($AAPL)) loses to it.
+  const kept: Facet[] = []
+  for (const facet of facets) {
+    const { byteStart, byteEnd } = facet.index
+    const overlaps = kept.some(
+      (k) => byteStart < k.index.byteEnd && byteEnd > k.index.byteStart,
+    )
+    if (!overlaps) kept.push(facet)
+  }
+
+  return kept.length > 0 ? kept : undefined
 }
 
 const TLD_SET = new Set(TLDs.map((tld) => tld.toLowerCase()))

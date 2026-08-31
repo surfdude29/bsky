@@ -40,10 +40,12 @@ URL, since `.now`, `.map`, `.next`, `.call` and `.run` are all real TLDs and
 `performance.now()` was being linkified. This is a heuristic: it costs
 `visit example.com(new tab)`, and does not apply to URLs that carry a scheme.
 
-`URL_REGEX`'s numbered capture groups have changed. Group 1 (the character preceding
-the match) and group 2 (the whole URL) are unchanged, but the branch alternatives are
-no longer capturing, so the former groups 3 to 6 are gone; read the bare-domain host
-from `groups.domain` instead. Both regexes now carry the `u` flag.
+`URL_REGEX`'s numbered capture groups keep their previous meanings -- 1 the preceding
+character, 2 the whole URL, 3 a schemed URL, 4 a bare domain with its tail, 5 the host,
+6 its last dot-label -- so consumers reading them positionally are unaffected. Both
+exported regexes now carry the `u` flag, and `URL_REGEX` no longer carries `i`: its
+scheme and host classes spell both cases out instead, because Unicode case-folding
+would otherwise let `[a-z]` match U+017F and U+212A.
 
 Facets are written into the record at compose time, so this changes what clients
 store, not just what they render. It does not retroactively repair existing posts.
