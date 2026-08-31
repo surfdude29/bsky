@@ -2,9 +2,10 @@
 '@bsky/sdk': minor
 ---
 
-Fix a range of rich-text link and mention detection bugs. A match no longer runs to the
-next whitespace and then gets repaired: the authority ends where RFC 3986 §3.2 says it
-does, and trailing sentence punctuation is stripped with brackets balanced. Host syntax
+Fix a range of rich-text link and mention detection bugs. The host is no longer taken by
+running to the next whitespace and repairing afterwards: the authority ends where RFC
+3986 §3.2 says it does, and an enumerated set of trailing marks is stripped with
+brackets balanced. Host syntax
 follows RFC 1035 §2.3.1 as amended by RFC 1123 §2.1, so a label may carry hyphens and
 begin with a digit; comparisons are ASCII case-insensitive; and the character allowed
 before a URL or handle is a Unicode-aware deny-list rather than "start of text, space or

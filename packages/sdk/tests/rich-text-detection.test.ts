@@ -682,6 +682,20 @@ const linkCases: [string, [string, string][]][] = [
     'https://example.com/#@',
     [['https://example.com/#@', 'https://example.com/#@']],
   ],
+  // "'" and "*" are sub-delims, so they are legal in a path for the same reason and
+  // are kept there -- but they still end an authority.
+  [
+    "https://example.com/foo'",
+    [["https://example.com/foo'", "https://example.com/foo'"]],
+  ],
+  [
+    'https://example.com/glob/*',
+    [['https://example.com/glob/*', 'https://example.com/glob/*']],
+  ],
+  [
+    'https://totallynotseth.dev*',
+    [['https://totallynotseth.dev', 'https://totallynotseth.dev']],
+  ],
   // Which component the "@" sits in is decided per "@", not once per URL: stripping
   // the trailing "?" moves it into the authority in the first two and leaves it in
   // the path in the third.

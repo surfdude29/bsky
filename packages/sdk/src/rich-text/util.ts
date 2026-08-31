@@ -1,7 +1,9 @@
 // LDH label per RFC 1035 §2.3.1 as amended by RFC 1123 §2.1: letters, digits and
-// hyphens, no leading or trailing hyphen. The `-+` (not `-`) keeps punycode A-labels
-// such as xn--80ak6aa92e working, and this shape rather than the more obvious
-// [A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])? leaves the pattern unable to backtrack.
+// hyphens, no leading or trailing hyphen. The §2.3.4 length limits are not enforced --
+// detection is about finding a link in prose, not validating a name. The `-+` (not
+// `-`) keeps punycode A-labels such as xn--80ak6aa92e working, and this shape rather
+// than the more obvious [A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])? leaves the engine no
+// ambiguous split to explore, so a failure costs one pass instead of many.
 //
 // Both cases are spelled out instead of using an `i` flag: with `u` also set, Unicode
 // case-folding makes [a-z] match U+017F and U+212A, which would admit "ſ.com" and
@@ -12,8 +14,10 @@ const LABEL = '[A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*'
 const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
 
 // RFC 3986 §3.2: the authority ends at "/", "?", "#" or end of input, and the port is
-// inside it. The (?!\d) fails an over-long port outright rather than matching a
-// five-digit prefix, so "example.com:123456/path" is not "example.com:12345".
+// inside it. Five digits is a practical cap covering every real port -- the RFC itself
+// says `port = *DIGIT` -- and the (?!\d) makes a longer run fail the group outright
+// rather than matching a prefix, so "example.com:123456/path" is not
+// "example.com:12345".
 const PORT = '(?::\\d{1,5}(?!\\d))?'
 const TAIL = '(?:[/?#][^\\s]*)?'
 
@@ -50,10 +54,11 @@ const LEAD = '(^|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)'
 
 export const MENTION_REGEX =
   /(^|[^\p{L}\p{N}\p{M}@#$]\p{M}*)(@)([a-zA-Z0-9.-]+)(\b)/gu
-// The branch alternatives capture, so the numbered groups carry: 1 preceding
-// character, 2 whole match, 3 schemed URL, 4 bare domain with tail, 5 host, 6 its last
-// dot-label. detectFacets uses only 1, 2 and `groups.domain`; the rest are part of the
-// exported regex's contract.
+// The branch alternatives capture, so the numbered groups carry: 1 the lead-in, being
+// a boundary character with any combining marks that follow it, 2 whole match,
+// 3 schemed URL, 4 bare domain with tail, 5 host, 6 its last dot-label. detectFacets
+// uses only 1, 2 and `groups.domain`; the rest are part of the exported regex's
+// contract.
 export const URL_REGEX = new RegExp(
   LEAD +
     '(' +

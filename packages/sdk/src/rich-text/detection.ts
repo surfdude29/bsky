@@ -16,14 +16,21 @@ export type Facet = app.bsky.richtext.facet.Main
 const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
- * Characters that end prose rather than a URL. "_" and "~" are excluded, since
- * example.com/foo_bar and example.com/~user are legitimate endings; angle brackets are
- * included, being RFC 3986 Appendix C delimiters rather than URI characters. "@" is
- * handled separately below, being meaningless only in the authority. No `g` flag: this
- * is used with `.test()` on single characters, which `g` would make stateful.
+ * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
+ * excluded, since example.com/foo_bar and example.com/~user are legitimate endings;
+ * angle brackets are included, being RFC 3986 Appendix C delimiters rather than URI
+ * characters. No `g` flag: this is used with `.test()` on single characters, which `g`
+ * would make stateful.
  */
 const TRAILING_STRIP_REGEX =
-  /[.,;:!?'"*<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
+  /[.,;:!?"<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
+
+/**
+ * Stripped only from an authority. All three are sub-delims or gen-delims that RFC 3986
+ * §3.3 admits to a path, so removing them from one would change where the URL points:
+ * https://example.com/glob/* and https://example.com/foo' are whole URLs.
+ */
+const AUTHORITY_ONLY_STRIP = new Set(['@', "'", '*'])
 
 /** Strips the scheme so the remainder can be tested for authority delimiters. */
 const SCHEME_PREFIX_REGEX = /^https?:\/\//i
@@ -52,18 +59,19 @@ function trimTrailing(uri: string): string {
   let end = uri.length
   while (end > 0) {
     const ch = uri[end - 1]
-    if (ch === '@') {
-      // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, query or
-      // fragment; only a trailing one in the authority is meaningless, being empty
-      // userinfo. A bare-domain match never carries an authority "@" -- its tail
-      // opens with "/", "?" or "#", so everything past the host is path, query or
-      // fragment -- though such matches do reach here ("example.com/path@").
+    if (AUTHORITY_ONLY_STRIP.has(ch)) {
+      // These are legal in a path, so they are only prose punctuation when they end an
+      // authority: "https://example.com@" closes a userinfo and leaves the host empty,
+      // and "https://example.com*" is emphasis around the host. A bare-domain match
+      // never reaches that case -- its tail opens with "/", "?" or "#", so everything
+      // past the host is path, query or fragment -- though such matches do reach here
+      // ("example.com/path@").
       //
-      // Decided per "@" rather than once for the whole URI: "?" is both an authority
-      // delimiter and strippable, so stripping one can move an "@" into the authority
-      // mid-loop.
-      const beforeAt = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
-      if (/[/?#]/.test(beforeAt)) break
+      // Decided per character rather than once for the whole URI: "?" is both an
+      // authority delimiter and strippable, so stripping one can move a character of
+      // this set into the authority mid-loop.
+      const before = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
+      if (/[/?#]/.test(before)) break
       end--
       continue
     }
