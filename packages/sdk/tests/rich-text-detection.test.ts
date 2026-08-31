@@ -520,23 +520,33 @@ describe('RichText.resolve', () => {
   })
 })
 
-/** Every link facet as [matched text, uri], so byte offsets are covered too. */
-const links = (text: string): [string, string][] => {
+/**
+ * Facets are read from `rt.facets` rather than from `rt.segments()`: segments skip
+ * any facet that starts before the previous one ended, so a detector emitting two
+ * overlapping facets looks correct through that lens while writing both into the
+ * record. See the no-overlap test below.
+ */
+const facetsOf = (text: string) => {
   const rt = new RichText({ text })
   rt.detectFacetsWithoutResolution()
-  return Array.from(rt.segments())
-    .filter((s) => s.link)
-    .map((s) => [s.text, s.link!.uri])
+  return (rt.facets ?? []).map((facet) => ({
+    text: rt.unicodeText.slice(facet.index.byteStart, facet.index.byteEnd),
+    index: facet.index,
+    features: facet.features,
+  }))
 }
 
+/** Every link facet as [matched text, uri], so byte offsets are covered too. */
+const links = (text: string): [string, string][] =>
+  facetsOf(text).flatMap((f) =>
+    f.features.filter(isLink).map((l): [string, string] => [f.text, l.uri]),
+  )
+
 /** Every mention facet as [matched text, handle]. */
-const mentions = (text: string): [string, string][] => {
-  const rt = new RichText({ text })
-  rt.detectFacetsWithoutResolution()
-  return Array.from(rt.segments())
-    .filter((s) => s.mention)
-    .map((s) => [s.text, s.mention!.did])
-}
+const mentions = (text: string): [string, string][] =>
+  facetsOf(text).flatMap((f) =>
+    f.features.filter(isMention).map((m): [string, string] => [f.text, m.did]),
+  )
 
 describe('detectFacets link detection', () => {
   const cases: [string, [string, string][]][] = [
@@ -634,6 +644,35 @@ describe('detectFacets link detection', () => {
     ['\u{1F517}example.com', [['example.com', 'https://example.com']]],
     ['emoji\u{1F389}bsky.app here', [['bsky.app', 'https://bsky.app']]],
     ['→https://example.com', [['https://example.com', 'https://example.com']]],
+    // A combining mark is not a boundary in its own right, but it may follow one:
+    // the variation selector belongs to the emoji, not to the URL.
+    ['⚠️example.com', [['example.com', 'https://example.com']]],
+    // The lead-in boundary is Unicode, not ASCII. With an ASCII-only boundary an
+    // accented or non-Latin letter reads as a separator, so the tail of a word
+    // becomes a domain in its own right.
+    ['naïve.com', []],
+    ['señor.org here', []],
+    ['мой сайт.com', []],
+    // A letter directly before a URL suppresses detection in every script. CJK is
+    // written without spaces, so this declines to link -- matching prior behaviour.
+    ['日本語bsky.app', []],
+
+    // An over-long port fails the whole port group rather than matching a
+    // five-digit prefix of it.
+    ['example.com:123456/path', [['example.com', 'https://example.com']]],
+    [
+      'example.com:99999/ok',
+      [['example.com:99999/ok', 'https://example.com:99999/ok']],
+    ],
+
+    // A trailing "@" is empty userinfo and angle brackets are RFC 3986 Appendix C
+    // delimiters, so neither belongs to the URL.
+    [
+      'https://totallynotseth.dev@',
+      [['https://totallynotseth.dev', 'https://totallynotseth.dev']],
+    ],
+    ['<https://example.com>', [['https://example.com', 'https://example.com']]],
+
     // ...and what the excluded set plus the schemeless guard keep out.
     ['path/to/site.com here', []],
     ['trailing_example.com', []],
@@ -676,6 +715,13 @@ describe('detectFacets does not truncate schemed URLs', () => {
     [
       'https://user@example.com/x',
       [['https://user@example.com/x', 'https://user@example.com/x']],
+    ],
+    // An apostrophe ends the authority only when it is a suffix. Followed by an
+    // "@" in the same authority it is userinfo, and truncating there would emit a
+    // broken "https://o".
+    [
+      "https://o'reilly@example.com/",
+      [["https://o'reilly@example.com/", "https://o'reilly@example.com/"]],
     ],
     // A match that trims down to nothing but its scheme is not a link.
     ['https://,,,', []],
@@ -740,12 +786,58 @@ describe('detectFacets mention detection', () => {
     // Non-regressions.
     ['not@right', []],
     ['@handle.com!@#$chars', [['@handle.com', 'handle.com']]],
-    // A handle in a URL path is part of the URL, not a mention -- without the
-    // guard this facet would overlap the link facet the same text produces.
+    // A handle in a URL is part of the URL, not a mention -- these would otherwise
+    // overlap the link facet the same text produces. segments() hides an overlap,
+    // so these assert through rt.facets; see the no-overlap test below.
     ['https://example.com/@bsky.app', []],
+    ['https://example.com/?q=@bsky.app', []],
+    ['https://example.com/foo-@bsky.app', []],
+    // An internationalised email address is not a mention. With an ASCII-only
+    // lead-in the accented letter reads as a boundary and @example.com matches.
+    ['josé@example.com', []],
+    ['josé@example.com'.normalize('NFD'), []],
+    ['мария@example.com', []],
+    // The ".test" suffix folds case, like every other TLD comparison.
+    ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
   ]
 
   it.each(cases)('%s', (input, expected) => {
     expect(mentions(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets never emits overlapping facets', () => {
+  // Facet ranges are written into the record, and a consumer that walks them in
+  // order (as segments() does) silently drops the second of any two that overlap --
+  // so an overlap is invisible from segments() while still corrupting the record.
+  // This asserts the invariant over every input the rest of this file exercises.
+  const inputs = [
+    'https://example.com/@bsky.app',
+    'https://example.com/?q=@bsky.app',
+    'https://example.com/foo-@bsky.app',
+    'https://example.com/#@bsky.app',
+    'https://example.com/a@b.com/c@d.org',
+    'josé@example.com',
+    'мария@example.com',
+    '@handle.com!@#$chars',
+    '.@alice.bsky.social hi',
+    'l’@alice.bsky.social a dit',
+    '#example.com tag',
+    '$AAPL example.com',
+    'hey @alice.test check bsky.app #tag $BTC',
+    'https://example.com/@a.com @b.com #c $D',
+    "example.com'dan bsky.app'e",
+    '🔗@alice.bsky.social hi',
+  ]
+
+  it.each(inputs)('%s', (input) => {
+    const rt = new RichText({ text: input })
+    rt.detectFacetsWithoutResolution()
+    const ranges = (rt.facets ?? [])
+      .map((f) => f.index)
+      .sort((a, b) => a.byteStart - b.byteStart)
+    for (let i = 1; i < ranges.length; i++) {
+      expect(ranges[i].byteStart).toBeGreaterThanOrEqual(ranges[i - 1].byteEnd)
+    }
   })
 })

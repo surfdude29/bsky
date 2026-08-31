@@ -17,12 +17,13 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
  * Characters that end prose rather than a URL. Deliberately excludes "_" and "~":
- * example.com/foo_bar and example.com/~user are legitimate endings. Must not carry
- * the `g` flag -- it is used with `.test()` on single characters below, and `g`
- * would make `.test()` stateful.
+ * example.com/foo_bar and example.com/~user are legitimate endings. A trailing "@" is
+ * empty userinfo, and angle brackets are RFC 3986 Appendix C delimiters rather than
+ * URI characters, so neither can end a URL. Must not carry the `g` flag -- it is used
+ * with `.test()` on single characters below, and `g` would make `.test()` stateful.
  */
 const TRAILING_STRIP_REGEX =
-  /[.,;:!?'"*\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
+  /[.,;:!?'"*@<>\u2018\u2019\u201C\u201D\u00AB\u00BB\u2026\u2013\u2014]/
 
 const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
   [')', '('],
@@ -66,37 +67,9 @@ function trimTrailing(uri: string): string {
 export function detectFacets(text: UnicodeString): Facet[] | undefined {
   let match
   const facets: Facet[] = []
-  {
-    // mentions
-    const re = MENTION_REGEX
-    while ((match = re.exec(text.utf16))) {
-      // A "/" before the "@" means the handle sits in a URL path
-      // (https://example.com/@bsky.app), not a mention. The deny-list lead-in of
-      // MENTION_REGEX newly lets it through, and the facet would overlap the link
-      // facet the same text produces.
-      if (match[1] === '/') {
-        continue
-      }
-      if (!isValidDomain(match[3]) && !match[3].endsWith('.test')) {
-        continue // probably not a handle
-      }
-
-      const start = text.utf16.indexOf(match[3], match.index) - 1
-      facets.push(
-        app.bsky.richtext.facet.$build({
-          index: {
-            byteStart: text.utf16IndexToUtf8Index(start),
-            byteEnd: text.utf16IndexToUtf8Index(start + match[3].length + 1),
-          },
-          features: [
-            app.bsky.richtext.facet.mention.$build({
-              did: match[3] as DidString, // boundary: detected text must be resolved
-            }),
-          ],
-        }),
-      )
-    }
-  }
+  // Ranges of the link facets emitted below, in UTF-16 indices; the mention pass
+  // consults them so the two cannot produce overlapping facets.
+  const linkRanges: [number, number][] = []
   {
     // links
     const re = URL_REGEX
@@ -133,6 +106,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       }
       index.end = start + trimmed.length
       const uri = domain ? `https://${trimmed}` : trimmed
+      linkRanges.push([index.start, index.end])
 
       facets.push({
         index: {
@@ -145,6 +119,47 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
           }),
         ],
       })
+    }
+  }
+  {
+    // mentions
+    const re = MENTION_REGEX
+    while ((match = re.exec(text.utf16))) {
+      // A "/" before the "@" means the handle sits in a URL path
+      // (https://example.com/@bsky.app), not a mention. The deny-list lead-in of
+      // MENTION_REGEX newly lets it through, and the facet would overlap the link
+      // facet the same text produces.
+      if (match[1].startsWith('/')) {
+        continue
+      }
+      if (
+        !isValidDomain(match[3]) &&
+        !match[3].toLowerCase().endsWith('.test')
+      ) {
+        continue // probably not a handle
+      }
+
+      const start = text.utf16.indexOf(match[3], match.index) - 1
+      const end = start + match[3].length + 1
+      // A handle inside a URL belongs to that URL -- https://example.com/?q=@bsky.app
+      // is one link, not a link and a mention. Facet ranges must not overlap, and
+      // segments() silently drops the second of two that do.
+      if (linkRanges.some(([from, to]) => start < to && end > from)) {
+        continue
+      }
+      facets.push(
+        app.bsky.richtext.facet.$build({
+          index: {
+            byteStart: text.utf16IndexToUtf8Index(start),
+            byteEnd: text.utf16IndexToUtf8Index(end),
+          },
+          features: [
+            app.bsky.richtext.facet.mention.$build({
+              did: match[3] as DidString, // boundary: detected text must be resolved
+            }),
+          ],
+        }),
+      )
     }
   }
   {

@@ -10,7 +10,9 @@ const DOMAIN = `${LABEL}(?:\\.${LABEL})+`
 
 // RFC 3986 §3.2: the authority ends at "/", "?", "#" or end of input. The port is
 // part of the authority, so ":" is handled here and not treated as a terminator.
-const PORT = '(?::\\d{1,5})?'
+// The (?!\\d) makes an over-long port fail the whole group rather than matching a
+// five-digit prefix of it: "example.com:123456/path" is not "example.com:12345".
+const PORT = '(?::\\d{1,5}(?!\\d))?'
 const TAIL = '(?:[/?#][^\\s]*)?'
 
 // A schemed URL's authority: any non-space run up to an RFC 3986 §3.2 delimiter.
@@ -19,18 +21,32 @@ const TAIL = '(?:[/?#][^\\s]*)?'
 // ("https://[::1]:8080"). Apostrophes and quotes are never legal in a host, and
 // terminating on them is what keeps suffixed forms out of the domain: Turkish
 // "https://example.com'dan" links to example.com, not to example.com'dan. They stay
-// legal in the path, which TAIL matches.
-const AUTHORITY = '[^\\s/?#\'"‘’“”]+'
+// legal in the path, which TAIL matches, and an apostrophe followed by an "@" in the
+// same authority is userinfo, not a suffix ("https://o'reilly@example.com"). The two
+// alternatives are disjoint, so the group stays unambiguous and cannot backtrack.
+const AUTHORITY = "(?:[^\\s/?#'\"‘’“”]|['’](?=[^\\s/?#]*@))+"
 
-// Anything that is not alphanumeric, "@", "#" or "$" may precede a URL or a handle.
-// A deny-list rather than an allow-list, so quotes, brackets, apostrophes and emoji
-// all work without having to enumerate them. Excluding alphanumerics is what keeps
-// "trailing_example.com" out; "@" keeps "foo@example.com" out, "#" keeps
+// Anything that is not a letter, a digit, "@", "#" or "$" may precede a URL or a
+// handle. A deny-list rather than an allow-list, so quotes, brackets, apostrophes and
+// emoji all work without having to enumerate them; emoji and arrows are \p{S} rather
+// than \p{L}, so they still count as a boundary. Excluding letters and digits is what
+// keeps "trailing_example.com" out; "@" keeps "foo@example.com" out, "#" keeps
 // "#example.com" from overlapping the hashtag facet, and "$" keeps cashtags clear.
-// Same excluded set as twitter-text's validUrlPrecedingChars.
-const LEAD = '(^|[^A-Za-z0-9@#$])'
+//
+// The classes are Unicode rather than ASCII, which needs the `u` flag below. An
+// ASCII-only boundary treats every accented or non-Latin letter as a separator, so
+// "josé@example.com" yields a mention of @example.com and "naïve.com" yields a link
+// to ve.com. The cost is that a URL run directly against letters -- as CJK, which is
+// written without spaces, does -- is not detected.
+//
+// Combining marks are excluded as well, or the same hole reopens for decomposed
+// text: NFD spells "josé" as "jose" + U+0301, and a mark is neither \p{L} nor \p{N}.
+// They are still allowed to *follow* the boundary character, so an emoji carrying a
+// variation selector ("⚠️example.com") keeps working.
+const LEAD = '(^|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)'
 
-export const MENTION_REGEX = /(^|[^A-Za-z0-9@#$])(@)([a-zA-Z0-9.-]+)(\b)/g
+export const MENTION_REGEX =
+  /(^|[^\p{L}\p{N}\p{M}@#$]\p{M}*)(@)([a-zA-Z0-9.-]+)(\b)/gu
 export const URL_REGEX = new RegExp(
   LEAD +
     '(' +
@@ -38,7 +54,7 @@ export const URL_REGEX = new RegExp(
     '|' +
     `(?<domain>${DOMAIN})${PORT}${TAIL}` +
     ')',
-  'gim',
+  'gimu',
 )
 export const TRAILING_PUNCTUATION_REGEX = /\p{P}+$/gu
 
