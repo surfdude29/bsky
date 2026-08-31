@@ -574,8 +574,8 @@ const linkCases: [string, [string, string][]][] = [
   ['-bad.com', []],
   ['bad-.com', []],
 
-  // Digit-leading and single-digit first labels. These are all live sites: 1.org, 
-  // 404media.co and 7.zip. What keeps the negatives below plain is the 
+  // Digit-leading and single-digit first labels. These are all live sites: 1.org,
+  // 404media.co and 7.zip. What keeps the negatives below plain is the
   // all-numeric-TLD rule (RFC 1123 §2.1, restated in RFC 3696 §2), not the first
   // label -- note 192.com and 192.168.1.1 differ only in their final label.
   ['1.org', [['1.org', 'https://1.org']]],
@@ -664,10 +664,7 @@ const linkCases: [string, [string, string][]][] = [
 
   // A trailing "@" closes a userinfo and leaves the host empty, and angle brackets are
   // RFC 3986 Appendix C delimiters, so neither belongs to the URL.
-  [
-    'https://example.com@',
-    [['https://example.com', 'https://example.com']],
-  ],
+  ['https://example.com@', [['https://example.com', 'https://example.com']]],
   ['<https://example.com>', [['https://example.com', 'https://example.com']]],
   // ...but RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, a query and a
   // fragment, and must survive there.
@@ -693,10 +690,7 @@ const linkCases: [string, [string, string][]][] = [
     'https://example.com/glob/*',
     [['https://example.com/glob/*', 'https://example.com/glob/*']],
   ],
-  [
-    'https://example.com*',
-    [['https://example.com', 'https://example.com']],
-  ],
+  ['https://example.com*', [['https://example.com', 'https://example.com']]],
   // The typographic marks are legal in an IRI path (RFC 3987 §2.2) and stripped from
   // one regardless, being the prose around a link far more often than part of it.
   [
@@ -803,10 +797,7 @@ const mentionCases: [string, [string, string][]][] = [
   ["l'@atproto.com", [['@atproto.com', 'atproto.com']]],
   // The Twitter-style leading ".@" is a mention too.
   ['.@bsky.app hi', [['@bsky.app', 'bsky.app']]],
-  [
-    '\u{1F517}@bsky.app hi',
-    [['@bsky.app', 'bsky.app']],
-  ],
+  ['\u{1F517}@bsky.app hi', [['@bsky.app', 'bsky.app']]],
   // Non-regressions.
   ['not@right', []],
   ['@handle.com!@#$chars', [['@handle.com', 'handle.com']]],
