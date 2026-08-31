@@ -549,8 +549,8 @@ const mentions = (text: string): [string, string][] =>
   )
 
 const linkCases: [string, [string, string][]][] = [
-  // Case folding. The TLD list is all lowercase and the scheme test used to be
-  // `startsWith('http')`, so neither of these linked before.
+  // Case folding. The host comparison and the scheme match are both ASCII
+  // case-insensitive.
   [
     'HTTPS://EXAMPLE.COM/Path',
     [['HTTPS://EXAMPLE.COM/Path', 'HTTPS://EXAMPLE.COM/Path']],
@@ -568,7 +568,7 @@ const linkCases: [string, [string, string][]][] = [
     'xn--80ak6aa92e.com test',
     [['xn--80ak6aa92e.com', 'https://xn--80ak6aa92e.com']],
   ],
-  // Also newly a link: every label is LDH-conformant and ".com" is a real TLD.
+  // A link: every label is LDH-conformant and ".com" is a real TLD.
   ['v1.2-example.com', [['v1.2-example.com', 'https://v1.2-example.com']]],
   // No leading or trailing hyphen in a label.
   ['-bad.com', []],
@@ -589,7 +589,7 @@ const linkCases: [string, [string, string][]][] = [
   ['See Section 4. In the box.', []],
 
   // Run-on: the authority ends at "/", "?", "#" or end of input (RFC 3986 §3.2),
-  // so prose that follows without a space is no longer swallowed.
+  // so prose that follows without a space is outside the match.
   ['go to example.com,then click', [['example.com', 'https://example.com']]],
   ['see example.com* for more', [['example.com', 'https://example.com']]],
   ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
@@ -606,8 +606,8 @@ const linkCases: [string, [string, string][]][] = [
     [['https://foo.com/thing_(cool)', 'https://foo.com/thing_(cool)']],
   ],
 
-  // Method calls. ".now", ".map" and ".next" are all real TLDs, so these used to
-  // linkify. Heuristic: a bare domain followed immediately by "(" is not a URL.
+  // Method calls. ".now", ".map" and ".next" are all real TLDs, so the host grammar
+  // alone would match these. Heuristic: a bare domain followed by "(" is not a URL.
   ['performance.now() is fast', []],
   ['array.map(fn) works', []],
   ['router.next() called', []],
@@ -650,7 +650,7 @@ const linkCases: [string, [string, string][]][] = [
   ['señor.org here', []],
   ['мой сайт.com', []],
   // A letter directly before a URL suppresses detection in every script. CJK is
-  // written without spaces, so this declines to link -- matching prior behaviour.
+  // written without spaces, so a URL run straight against it is not detected.
   ['日本語bsky.app', []],
 
   // An over-long port fails the whole port group rather than matching a
@@ -771,7 +771,7 @@ const mentionCases: [string, [string, string][]][] = [
   // social-app issue 7341: a handle after an apostrophe.
   ['l’@alice.bsky.social a dit', [['@alice.bsky.social', 'alice.bsky.social']]],
   ["l'@bob.bsky.social", [['@bob.bsky.social', 'bob.bsky.social']]],
-  // The Twitter-style leading ".@" now works too.
+  // The Twitter-style leading ".@" is a mention too.
   ['.@alice.bsky.social hi', [['@alice.bsky.social', 'alice.bsky.social']]],
   [
     '\u{1F517}@alice.bsky.social hi',
@@ -830,9 +830,8 @@ describe('detectFacets does not truncate schemed URLs', () => {
 })
 
 describe('detectFacets does not swallow apostrophe suffixes', () => {
-  // social-app issue 8164: "example.com'dan" is Turkish for "from
-  // example.com". The apostrophe and the suffix used to be absorbed into the host,
-  // producing a link to https://example.xn--comdan-5h0c.
+  // social-app issue 8164: "example.com'dan" is Turkish for "from example.com". The
+  // suffix belongs to the sentence, not to the host.
   const cases = apostropheCases
 
   it.each(cases)('%s', (input, expected) => {
@@ -866,9 +865,9 @@ describe('detectFacets never emits overlapping facets', () => {
   // (as segments() does) silently drops the second of any two that overlap -- so an
   // overlap is invisible from segments() while still corrupting the record.
   //
-  // The corpus is derived from every case the blocks above declare rather than being
-  // listed by hand: a hand-picked list is what let a link/cashtag overlap through
-  // review. Only combinations that no single block exercises are added explicitly.
+  // The corpus is derived from every case the blocks above declare, so every input
+  // this file exercises is checked for overlap automatically. Only combinations that
+  // no single block exercises are added explicitly.
   const inputs = [
     ...linkCases.map(([input]) => input),
     ...schemedCases.map(([input]) => input),

@@ -50,10 +50,10 @@ const LEAD = '(^|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)'
 
 export const MENTION_REGEX =
   /(^|[^\p{L}\p{N}\p{M}@#$]\p{M}*)(@)([a-zA-Z0-9.-]+)(\b)/gu
-// The branch alternatives capture so the numbered groups keep the meanings they had
-// before this grammar was rewritten: 1 preceding character, 2 whole match, 3 schemed
-// URL, 4 bare domain with tail, 5 host, 6 its last dot-label. detectFacets uses only
-// 1, 2 and `groups.domain`; the rest are for consumers of the exported regex.
+// The branch alternatives capture, so the numbered groups carry: 1 preceding
+// character, 2 whole match, 3 schemed URL, 4 bare domain with tail, 5 host, 6 its last
+// dot-label. detectFacets uses only 1, 2 and `groups.domain`; the rest are part of the
+// exported regex's contract.
 export const URL_REGEX = new RegExp(
   LEAD +
     '(' +

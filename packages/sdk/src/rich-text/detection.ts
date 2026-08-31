@@ -59,9 +59,9 @@ function trimTrailing(uri: string): string {
       // opens with "/", "?" or "#", so everything past the host is path, query or
       // fragment -- though such matches do reach here ("example.com/path@").
       //
-      // Decided per "@" rather than once before the loop, where it would go stale:
-      // "?" is both an authority delimiter and strippable, so stripping one can move
-      // an "@" into the authority.
+      // Decided per "@" rather than once for the whole URI: "?" is both an authority
+      // delimiter and strippable, so stripping one can move an "@" into the authority
+      // mid-loop.
       const beforeAt = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
       if (/[/?#]/.test(beforeAt)) break
       end--
@@ -139,9 +139,8 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
     const re = MENTION_REGEX
     while ((match = re.exec(text.utf16))) {
       // A "/" before the "@" means the handle sits in a URL path
-      // (https://example.com/@bsky.app), not a mention. The deny-list lead-in of
-      // MENTION_REGEX newly lets it through, and the facet would overlap the link
-      // facet the same text produces.
+      // (https://example.com/@bsky.app), not a mention. MENTION_REGEX's lead-in admits
+      // it, and the facet would overlap the link facet the same text produces.
       if (match[1].startsWith('/')) {
         continue
       }
@@ -247,11 +246,10 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
 const TLD_SET = new Set(TLDs.map((tld) => tld.toLowerCase()))
 
 /**
- * The TLD list has no dotted entries, so the old predicate -- TLD preceded by a dot and
- * ending the string -- could only ever match the final label. Taking that label
- * directly is equivalent, adds ASCII case folding (RFC 4343: DNS case-insensitivity is
- * a property of comparison, not of storage), and turns a scan of ~1,400 TLDs into an
- * O(1) lookup, which matters on every keystroke in a composer.
+ * A domain is valid when its final label is a known TLD. The comparison folds ASCII
+ * case, per RFC 4343: DNS case-insensitivity is a property of comparison, not of
+ * storage. The set keeps this an O(1) lookup over ~1,400 TLDs, which matters on every
+ * keystroke in a composer.
  */
 function isValidDomain(str: string): boolean {
   const i = str.lastIndexOf('.')
