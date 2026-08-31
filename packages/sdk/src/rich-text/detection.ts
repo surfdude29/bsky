@@ -56,9 +56,10 @@ function trimTrailing(uri: string): string {
     if (ch === '@') {
       // RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, and by extension
       // in a query and a fragment. Only a trailing "@" in the authority is
-      // meaningless, where it is empty userinfo. A bare-domain match never reaches
-      // this: its tail has to start with "/", "?" or "#", so an "@" cannot be inside
-      // the match.
+      // meaningless, where it is empty userinfo. The bare-domain branch cannot
+      // produce one: its tail has to open with "/", "?" or "#", so everything after
+      // the host is path, query or fragment. Such a match does reach this branch --
+      // "example.com/path@" is one -- it simply never carries an authority "@".
       //
       // Decided here rather than once before the loop: the loop may have already
       // stripped a trailing "?", which is both an authority delimiter and strippable
