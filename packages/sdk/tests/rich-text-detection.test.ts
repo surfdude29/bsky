@@ -687,6 +687,24 @@ const linkCases: [string, [string, string][]][] = [
     '<https://example.com/path>following',
     [['https://example.com/path', 'https://example.com/path']],
   ],
+  // Every wrapper LEAD admits as an opener, closed with prose running straight on. The
+  // closer belongs to the sentence, not to the URL.
+  [
+    '"https://example.com/path"following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\u201Chttps://example.com/path\u201Dfollowing',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\u00ABhttps://example.com\u00BBfollowing',
+    [['https://example.com', 'https://example.com']],
+  ],
+  [
+    '`https://example.com`following',
+    [['https://example.com', 'https://example.com']],
+  ],
   // ...but RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, a query and a
   // fragment, and must survive there.
   [
@@ -914,9 +932,9 @@ describe('detectFacets never emits overlapping facets', () => {
   // (as segments() does) silently drops the second of any two that overlap -- so an
   // overlap is invisible from segments() while still corrupting the record.
   //
-  // The corpus is derived from every case the blocks above declare, so every input
-  // this file exercises is checked for overlap automatically. Only combinations that
-  // no single block exercises are added explicitly.
+  // The corpus is derived from every case the five tables above declare, so each of
+  // those is checked for overlap automatically -- the older block at the top of the file
+  // is not. Only combinations that no single table exercises are added explicitly.
   const inputs = [
     ...linkCases.map(([input]) => input),
     ...schemedCases.map(([input]) => input),
