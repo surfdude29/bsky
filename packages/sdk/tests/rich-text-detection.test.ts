@@ -569,11 +569,14 @@ const linkCases: [string, [string, string][]][] = [
     [['xn--80ak6aa92e.com', 'https://xn--80ak6aa92e.com']],
   ],
   // A punycoded *final* label. The TLD list spells an internationalised TLD as its
-  // U-label ("рф"), which ASCII text never carries, so the set holds the A-label.
-  ['example.xn--p1ai', [['example.xn--p1ai', 'https://example.xn--p1ai']]],
+  // U-label ("みんな"), which ASCII text never carries, so the set holds the A-label.
   [
-    'xn--80ak6aa92e.xn--p1ai',
-    [['xn--80ak6aa92e.xn--p1ai', 'https://xn--80ak6aa92e.xn--p1ai']],
+    'example.xn--q9jyb4c',
+    [['example.xn--q9jyb4c', 'https://example.xn--q9jyb4c']],
+  ],
+  [
+    'xn--80ak6aa92e.xn--q9jyb4c',
+    [['xn--80ak6aa92e.xn--q9jyb4c', 'https://xn--80ak6aa92e.xn--q9jyb4c']],
   ],
   // Still an exact comparison: "xn--" is not a licence to invent a TLD.
   ['example.xn--fake', []],
@@ -674,11 +677,11 @@ const linkCases: [string, [string, string][]][] = [
   // The same rule on the other side. A dot and a label character continue the host
   // into a label the ASCII grammar cannot reach, so an internationalised domain is
   // detected only with a scheme.
-  ['example.com.рф', []],
-  ['example.com.рф/path', []],
+  ['example.com.みんな', []],
+  ['example.com.みんな/path', []],
   [
-    'https://example.com.рф',
-    [['https://example.com.рф', 'https://example.com.рф']],
+    'https://example.com.みんな',
+    [['https://example.com.みんな', 'https://example.com.みんな']],
   ],
   // Without a dot the host is complete and what follows is prose. CJK is written
   // without spaces, so this is the common shape rather than a curiosity.
@@ -878,10 +881,10 @@ const mentionCases: [string, [string, string][]][] = [
   ['мария@example.com', []],
   // An internationalised handle can only be written as an A-label: @atproto/syntax
   // admits [a-zA-Z0-9.-] alone.
-  ['@alice.xn--p1ai hi', [['@alice.xn--p1ai', 'alice.xn--p1ai']]],
+  ['@alice.xn--q9jyb4c hi', [['@alice.xn--q9jyb4c', 'alice.xn--q9jyb4c']]],
   // ...and only that spelling: a handle is ASCII, so a host continuing into another
   // script is not one.
-  ['@alice.com.рф', []],
+  ['@alice.com.みんな', []],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]

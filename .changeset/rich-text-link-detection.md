@@ -14,14 +14,14 @@ URL's authority is deliberately exempt, so IDN hosts and IPv6 literals still wor
 Comparisons are ASCII case-insensitive, and internationalised TLDs are compared as
 punycode A-labels, the only form ASCII text can carry. A bare domain is ASCII by grammar
 and is dropped when the host continues into another script, so an internationalised domain
-is detected only in its punycode spelling (`example.xn--p1ai`) or with a scheme
+is detected only in its punycode spelling (`example.xn--q9jyb4c`) or with a scheme
 (`https://münchen.de`). The regex now allows a Unicode-aware deny-list of characters
 before a URL or handle rather than "start of text, space or open paren", with detection
 then rejecting `-`, `_`, `.` and `/` before a schemeless URL and `/` before a mention.
 Together these fix run-on text (`example.com,then`), suffixation absorbed into the host
 (`example.com'dan`), uppercase (`HTTPS://EXAMPLE.COM`), hyphens and digit-leading labels
-(`my-site.example.com`, `404media.co`), punycoded TLDs (`example.xn--p1ai`,
-`@alice.xn--p1ai`), wrapped URLs with prose running straight on
+(`my-site.example.com`, `404media.co`), punycoded TLDs (`example.xn--q9jyb4c`,
+`@alice.xn--q9jyb4c`), wrapped URLs with prose running straight on
 (`<https://example.com>following`, `«https://example.com»following`), and detection after
 quotes, apostrophes and emoji, keycaps (`1️⃣https://example.com`) included. Facets are no
 longer nested inside one another, and a bare domain followed immediately by `(` is treated

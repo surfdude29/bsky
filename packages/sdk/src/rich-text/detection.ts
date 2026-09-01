@@ -17,7 +17,7 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
  * A dot and a label character after a bare match mean the host continues into a label
- * the ASCII grammar cannot reach: "example.com.рф" is one host, and linking the
+ * the ASCII grammar cannot reach: "example.com.みんな" is one host, and linking the
  * "example.com" inside it would point somewhere else. An internationalised domain is
  * detected only when it carries a scheme, whose authority is not held to that grammar.
  * The dot is required -- without one the host is already complete, so text running
@@ -185,7 +185,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const start = text.utf16.indexOf(match[3], match.index) - 1
       const end = start + match[3].length + 1
       // A handle is ASCII -- @atproto/syntax admits [a-zA-Z0-9.-] alone -- so a host
-      // continuing into another script is not one; @alice.xn--p1ai is how it is written.
+      // continuing into another script is not one. It is written @alice.xn--q9jyb4c.
       if (HOST_CONTINUES_REGEX.test(text.utf16.slice(end))) {
         continue
       }
@@ -281,7 +281,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
 
 /**
  * Known TLDs, as A-labels. The `tlds` package spells an internationalised TLD as its
- * Unicode U-label -- "рф", not "xn--p1ai" -- but every candidate reaching
+ * Unicode U-label -- "みんな", not "xn--q9jyb4c" -- but every candidate reaching
  * isValidDomain is ASCII, since URL_REGEX's label grammar and MENTION_REGEX's handle
  * class both are, so a U-label could never match one. Each is converted to the punycode
  * A-label that such a name is written as in ASCII text; for a handle that is the only
