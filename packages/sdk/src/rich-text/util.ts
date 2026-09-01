@@ -20,31 +20,23 @@ const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
 // "example.com:12345".
 const PORT = '(?::\\d{1,5}(?!\\d))?'
 
-// The wrappers prose puts around a URL. LEAD admits every one of them as an opener --
-// that is what detection after quotes means -- so the closer must not be swallowed at the
-// other end: "«https://example.com»following" is a link and then prose, not a host ending
-// in "»following". RFC 3986 Appendix C says exactly this of the angle brackets, and none
-// of the others is a URI character either; the typographic marks are legal in an IRI path
-// per RFC 3987 §2.2 and are excluded anyway, a path containing one being far rarer than
-// prose quoting a link. This is not the deferred path-bounding work: ",", "." and "!" are
-// legal in a path and need a judgement call, a wrapper closing what LEAD opened does not.
-const WRAPPERS = '"“”‘«»`<>'
-
-// "’" joins them here but not in AUTHORITY_STOP, where the userinfo lookahead must still
-// be able to cross it. "'" stays legal in a path ("https://example.com/it's-fine").
-const TAIL = `(?:[/?#][^\\s${WRAPPERS}’]*)?`
+// Angle brackets are the only characters a path cannot carry: RFC 3986 Appendix C wraps a
+// URI in them precisely because they cannot occur inside one. Quotes can and do --
+// https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic is a real page -- so what closes a
+// quoted URL is decided in detectFacets from the wrapper that opened it, not here.
+const TAIL = '(?:[/?#][^\\s<>]*)?'
 
 // A schemed URL's authority: any non-space run up to an RFC 3986 §3.2 delimiter, not
 // the LDH grammar above, which would truncate IDN hosts ("https://münchen.de" ->
 // "https://m") and drop IPv6 literals ("https://[::1]:8080").
 //
-// It also stops at the wrappers above and at apostrophes, which is a practical rule
-// rather than a normative one: RFC 3986 §2.2 makes "'" a sub-delim, so it is legal in a
-// host (and in a path) even though no registrable name uses it. Stopping there is what keeps
-// Turkish suffixation out of the domain -- "https://example.com'dan" links to
-// example.com -- while an apostrophe followed by an "@" in the same authority is
-// userinfo and is kept ("https://o'reilly@example.com"). The two alternatives are
-// disjoint, so the group cannot backtrack.
+// It also stops at the wrappers prose puts around a URL and at apostrophes, neither of
+// which a registrable name carries. That is a practical rule rather than a normative
+// one: RFC 3986 §2.2 makes "'" a sub-delim, so it is legal in a host and in a path.
+// Stopping there is what keeps Turkish suffixation out of the domain --
+// "https://example.com'dan" links to example.com -- while an apostrophe followed by an
+// "@" in the same authority is userinfo and is kept ("https://o'reilly@example.com").
+// The two alternatives are disjoint, so the group cannot backtrack.
 //
 // The lookahead spans AUTHORITY_STOP rather than the §3.2 delimiters alone, so it cannot
 // admit an apostrophe on the strength of an "@" lying past the point the authority itself
@@ -56,7 +48,7 @@ const TAIL = `(?:[/?#][^\\s${WRAPPERS}’]*)?`
 // rescanning to the same "@": unbounded that is quadratic in a run of them. 255 covers any
 // real userinfo and host -- RFC 1035 §2.3.4 caps a name at 253 -- and overrunning it just
 // means the apostrophe is a suffix rather than userinfo, which is the commoner reading.
-const AUTHORITY_STOP = `\\s/?#${WRAPPERS}`
+const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>'
 const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]{0,255}@))+`
 
 // What may precede a URL or a handle: anything that is not a letter, a digit or a

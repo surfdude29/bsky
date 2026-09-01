@@ -728,6 +728,45 @@ const linkCases: [string, [string, string][]][] = [
     '`https://example.com`following',
     [['https://example.com', 'https://example.com']],
   ],
+  // A quote nothing opened is path content. These are real pages, which MediaWiki serves
+  // without percent-encoding, so banning the character outright would point them at
+  // /wiki/.
+  [
+    'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+    [
+      [
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+      ],
+    ],
+  ],
+  [
+    'https://en.wikipedia.org/wiki/«',
+    [['https://en.wikipedia.org/wiki/«', 'https://en.wikipedia.org/wiki/«']],
+  ],
+  [
+    'https://en.wikipedia.org/wiki/»',
+    [['https://en.wikipedia.org/wiki/»', 'https://en.wikipedia.org/wiki/»']],
+  ],
+  // Apostrophes and modifier letters likewise, and a path may end in an accented letter.
+  [
+    "https://en.wikipedia.org/wiki/'s-Hertogenbosch",
+    [
+      [
+        "https://en.wikipedia.org/wiki/'s-Hertogenbosch",
+        "https://en.wikipedia.org/wiki/'s-Hertogenbosch",
+      ],
+    ],
+  ],
+  [
+    "https://en.wikipedia.org/wiki/ʻAbdu'l-Bahá",
+    [
+      [
+        "https://en.wikipedia.org/wiki/ʻAbdu'l-Bahá",
+        "https://en.wikipedia.org/wiki/ʻAbdu'l-Bahá",
+      ],
+    ],
+  ],
   // ...but RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, a query and a
   // fragment, and must survive there.
   [
@@ -753,20 +792,24 @@ const linkCases: [string, [string, string][]][] = [
     [['https://example.com/glob/*', 'https://example.com/glob/*']],
   ],
   ['https://example.com*', [['https://example.com', 'https://example.com']]],
-  // The typographic marks are legal in an IRI path (RFC 3987 §2.2) and stripped from
-  // one regardless, being the prose around a link far more often than part of it.
+  // A quoted URL ends at the quote that opened it, whichever pair was used.
   [
     '“https://example.com/foo”',
     [['https://example.com/foo', 'https://example.com/foo']],
   ],
   [
-    'see https://example.com/foo… ok',
-    [['https://example.com/foo', 'https://example.com/foo']],
+    '‘https://example.com/a’',
+    [['https://example.com/a', 'https://example.com/a']],
   ],
-  // The cost of that: a path that really does end in one is truncated.
+  // With nothing to pair against, the same mark is part of the path.
   [
     'https://example.com/a’',
-    [['https://example.com/a', 'https://example.com/a']],
+    [['https://example.com/a’', 'https://example.com/a’']],
+  ],
+  // Sentence punctuation is trimmed regardless, having no opener to pair with.
+  [
+    'see https://example.com/foo… ok',
+    [['https://example.com/foo', 'https://example.com/foo']],
   ],
   // Which component the "@" sits in is decided per "@", not once per URL: stripping
   // the trailing "?" moves it into the authority in the first two and leaves it in

@@ -27,16 +27,14 @@ const HOST_CONTINUES_REGEX = /^\.[\p{L}\p{N}\p{M}]/u
 
 /**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
- * excluded, since example.com/foo_bar and example.com/~user are legitimate endings. The
- * quotes and brackets need no entry either: util.ts's WRAPPERS keeps them out of the
- * match grammar altogether, so none can reach the end of one. What is left is the marks
- * a sentence ends on but a wrapper never opens -- an ellipsis or a dash. They are legal
- * in an IRI path (RFC 3987 §2.2 admits them to iunreserved) and stripped from one
- * anyway, being the prose around a link far more often than part of it.
- * AUTHORITY_ONLY_STRIP below strikes the opposite balance for characters that are common
- * in real paths; the cost here is a path genuinely ending in one, which is truncated. No
- * `g` flag: this is used with `.test()` on single characters, which `g` would make
- * stateful.
+ * excluded, since example.com/foo_bar and example.com/~user are legitimate endings, and
+ * so are the quotes: a URL a quote opened is cut at its closer by WRAPPER_PAIRS below, so
+ * a quote reaching the trim is one the path itself carries. What is left is sentence
+ * punctuation, which is prose after a link far more often than the last character of a
+ * path. AUTHORITY_ONLY_STRIP below strikes the opposite balance for characters that are
+ * common in real paths; the cost here is a path genuinely ending in one, which is
+ * truncated. No `g` flag: this is used with `.test()` on single characters, which `g`
+ * would make stateful.
  */
 const TRAILING_STRIP_REGEX = /[.,;:!?\u2026\u2013\u2014]/
 
@@ -54,6 +52,21 @@ const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
   [')', '('],
   [']', '['],
   ['}', '{'],
+])
+
+/**
+ * The closer for each wrapper the lead-in admits as an opener. A URL opened with one ends
+ * at its closer, so «https://example.com/a»then links to /a, while
+ * https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic, which nothing opened, keeps the
+ * quotes its path carries. Angle brackets need no entry, the grammar excluding them from
+ * a match entirely.
+ */
+const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
+  ['"', '"'],
+  ['\u201C', '\u201D'],
+  ['\u2018', '\u2019'],
+  ['\u00AB', '\u00BB'],
+  ['`', '`'],
 ])
 
 function countChar(str: string, char: string): number {
@@ -143,7 +156,14 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         }
       }
 
-      const trimmed = trimTrailing(match[2])
+      let matched = match[2]
+      const closer = WRAPPER_PAIRS.get(match[1][0])
+      if (closer !== undefined) {
+        const at = matched.indexOf(closer)
+        if (at !== -1) matched = matched.slice(0, at)
+      }
+
+      const trimmed = trimTrailing(matched)
       // A schemed match that trims down to nothing but its scheme ("https://,,,")
       // is not a link.
       if (!trimmed || (!domain && SCHEME_ONLY_REGEX.test(trimmed))) {
