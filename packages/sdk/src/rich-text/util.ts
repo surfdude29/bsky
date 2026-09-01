@@ -45,9 +45,11 @@ const TAIL = '(?:[/?#][^\\s<>]*)?'
 // the stop set, being the conditional pair the lookahead must still be able to cross.
 //
 // It is bounded rather than open-ended because it runs once per apostrophe, each time
-// rescanning to the same "@": unbounded that is quadratic in a run of them. 255 covers any
-// real userinfo and host -- RFC 1035 §2.3.4 caps a name at 253 -- and overrunning it just
-// means the apostrophe is a suffix rather than userinfo, which is the commoner reading.
+// rescanning to the same "@": unbounded that is quadratic in a run of them. The 255 is
+// a cap on how far an apostrophe may look for its "@", not a limit the URI grammar
+// imposes -- RFC 3986 gives userinfo no length at all. It is longer than any userinfo
+// that fits in a post beside a URL, and overrunning it just reads the apostrophe as a
+// suffix rather than userinfo, which is the commoner of the two.
 const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>'
 const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]{0,255}@))+`
 

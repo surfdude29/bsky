@@ -714,8 +714,9 @@ const linkCases: [string, [string, string][]][] = [
     '<https://example.com/path>following',
     [['https://example.com/path', 'https://example.com/path']],
   ],
-  // Every wrapper LEAD admits as an opener, closed with prose running straight on. The
-  // closer belongs to the sentence, not to the URL.
+  // Each wrapper WRAPPER_PAIRS lists, closed with prose running straight on. The closer
+  // belongs to the sentence, not to the URL. LEAD admits "(", "[" and "{" as openers too,
+  // but bounding a path is out of scope, so only these are paired.
   [
     '"https://example.com/path"following',
     [['https://example.com/path', 'https://example.com/path']],

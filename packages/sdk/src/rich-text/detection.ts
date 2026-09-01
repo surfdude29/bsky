@@ -57,7 +57,7 @@ const TRAILING_STRIP_REGEX = /[.,;:!?\u2026\u2013\u2014]/
  */
 const AUTHORITY_ONLY_STRIP = new Set(['@', "'", '*'])
 
-/** Strips the scheme so the remainder can be tested for authority delimiters. */
+/** Measures the scheme, so a delimiter inside it is not read as ending the authority. */
 const SCHEME_PREFIX_REGEX = /^https?:\/\//i
 
 const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
@@ -107,6 +107,24 @@ function countChar(str: string, char: string): number {
  */
 function trimTrailing(uri: string): string {
   let end = uri.length
+
+  // Both of the loop's questions are answered up front rather than per character, since
+  // a long run of either kind would otherwise rescan the whole prefix once per step.
+  //
+  // How many closers of each kind the prefix has in excess of their openers. Stripping
+  // one takes a closer off the prefix, so decrementing keeps this true as the loop
+  // shortens; neither of the other two sets below contains a bracket, so nothing else
+  // disturbs the count.
+  const excess = new Map<string, number>()
+  for (const [close, open] of BRACKET_PAIRS) {
+    excess.set(close, countChar(uri, close) - countChar(uri, open))
+  }
+  // Where the authority ends, so "is this character in a path?" is a comparison.
+  const schemeLength = SCHEME_PREFIX_REGEX.exec(uri)?.[0].length ?? 0
+  const delimiterAt = uri.slice(schemeLength).search(/[/?#]/)
+  const firstDelimiter =
+    delimiterAt === -1 ? Infinity : schemeLength + delimiterAt
+
   while (end > 0) {
     const ch = uri[end - 1]
     if (AUTHORITY_ONLY_STRIP.has(ch)) {
@@ -120,8 +138,7 @@ function trimTrailing(uri: string): string {
       // Decided per character rather than once for the whole URI: "?" is both an
       // authority delimiter and strippable, so stripping one can move a character of
       // this set into the authority mid-loop.
-      const before = uri.slice(0, end - 1).replace(SCHEME_PREFIX_REGEX, '')
-      if (/[/?#]/.test(before)) break
+      if (firstDelimiter < end - 1) break
       end--
       continue
     }
@@ -129,9 +146,9 @@ function trimTrailing(uri: string): string {
       end--
       continue
     }
-    const open = BRACKET_PAIRS.get(ch)
-    const prefix = uri.slice(0, end)
-    if (open !== undefined && countChar(prefix, open) < countChar(prefix, ch)) {
+    const surplus = excess.get(ch)
+    if (surplus !== undefined && surplus > 0) {
+      excess.set(ch, surplus - 1)
       end--
       continue
     }
