@@ -85,8 +85,7 @@ const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]{0,2
 const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
 const LEAD = `(^|${KEYCAP}|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)`
 
-// Built from LEAD rather than repeating it: the two were character-identical, and a rule
-// this fiddly spelled out twice is a rule that ends up spelled differently.
+// A handle takes the same lead-in as a URL, so it shares LEAD rather than restating it.
 export const MENTION_REGEX = new RegExp(`${LEAD}(@)([a-zA-Z0-9.-]+)(\\b)`, 'gu')
 // The branch alternatives capture, so the numbered groups carry: 1 the lead-in, being
 // a keycap sequence or a boundary character with any combining marks that follow it,
