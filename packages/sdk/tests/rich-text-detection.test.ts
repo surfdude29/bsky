@@ -650,6 +650,13 @@ const linkCases: [string, [string, string][]][] = [
     [['https://example.com/', 'https://example.com/']],
   ],
   ['\u{1F517}example.com', [['example.com', 'https://example.com']]],
+  // A keycap is the one emoji family the deny-list cannot express on its own: its base
+  // is a digit (or "#"), which the lead-in excludes, and the rest of it is combining
+  // marks. TAG_REGEX already refuses "#\uFE0F\u20E3" as a tag, so there is no contest.
+  [
+    '1\uFE0F\u20E3https://example.com',
+    [['https://example.com', 'https://example.com']],
+  ],
   ['emoji\u{1F389}bsky.app here', [['bsky.app', 'https://bsky.app']]],
   ['→https://example.com', [['https://example.com', 'https://example.com']]],
   // A combining mark is not a boundary in its own right, but it may follow one:
@@ -842,6 +849,7 @@ const mentionCases: [string, [string, string][]][] = [
   ['.@bsky.app hi', [['@bsky.app', 'bsky.app']]],
   ['\u{1F517}@bsky.app hi', [['@bsky.app', 'bsky.app']]],
   // Non-regressions.
+  ['1\uFE0F\u20E3@bsky.app', [['@bsky.app', 'bsky.app']]],
   ['not@right', []],
   ['@handle.com!@#$chars', [['@handle.com', 'handle.com']]],
   // A handle in a URL is part of the URL, not a mention -- these would otherwise

@@ -75,12 +75,22 @@ const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]{0,2
 // same reason, since NFD spells "josé" as "jose" + U+0301. A mark may still *follow*
 // the boundary character, so an emoji carrying a variation selector ("⚠️example.com")
 // works. The cost is that a URL run straight against letters, as CJK is, is not found.
-const LEAD = '(^|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)'
+//
+// Keycaps are the one emoji family the deny-list cannot express, so they are enumerated:
+// "1️⃣" is a digit, a variation selector and U+20E3, which is a base the list excludes
+// followed by marks. Spelling them out is what makes the "emoji" above true rather than
+// nearly true. The variation selector is optional, since older text writes the sequence
+// without it. "#️⃣" costs nothing here -- TAG_REGEX's own `(?!\ufe0f)` already refuses to
+// read it as a hashtag.
+const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
+const LEAD = `(^|${KEYCAP}|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)`
 
-export const MENTION_REGEX =
-  /(^|[^\p{L}\p{N}\p{M}@#$]\p{M}*)(@)([a-zA-Z0-9.-]+)(\b)/gu
+// Built from LEAD rather than repeating it: the two were character-identical, and a rule
+// this fiddly spelled out twice is a rule that ends up spelled differently.
+export const MENTION_REGEX = new RegExp(`${LEAD}(@)([a-zA-Z0-9.-]+)(\\b)`, 'gu')
 // The branch alternatives capture, so the numbered groups carry: 1 the lead-in, being
-// a boundary character with any combining marks that follow it, 2 whole match,
+// a keycap sequence or a boundary character with any combining marks that follow it,
+// 2 whole match,
 // 3 schemed URL, 4 bare domain with tail, 5 host, 6 its last dot-label. detectFacets
 // uses only 1, 2 and `groups.domain`; the rest are part of the exported regex's
 // contract.
