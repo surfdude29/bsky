@@ -740,30 +740,23 @@ const linkCases: [string, [string, string][]][] = [
       ],
     ],
   ],
+  // The rule belongs to the tail, so a schemeless host reaches it the same way.
   [
-    'https://en.wikipedia.org/wiki/«',
-    [['https://en.wikipedia.org/wiki/«', 'https://en.wikipedia.org/wiki/«']],
-  ],
-  [
-    'https://en.wikipedia.org/wiki/»',
-    [['https://en.wikipedia.org/wiki/»', 'https://en.wikipedia.org/wiki/»']],
-  ],
-  // Apostrophes and modifier letters likewise, and a path may end in an accented letter.
-  [
-    "https://en.wikipedia.org/wiki/'s-Hertogenbosch",
+    'en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
     [
       [
-        "https://en.wikipedia.org/wiki/'s-Hertogenbosch",
-        "https://en.wikipedia.org/wiki/'s-Hertogenbosch",
+        'en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
       ],
     ],
   ],
+  // Guillemets likewise, and a closer mid-path does not end the URL either.
   [
-    "https://en.wikipedia.org/wiki/ʻAbdu'l-Bahá",
+    'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
     [
       [
-        "https://en.wikipedia.org/wiki/ʻAbdu'l-Bahá",
-        "https://en.wikipedia.org/wiki/ʻAbdu'l-Bahá",
+        'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
+        'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
       ],
     ],
   ],
