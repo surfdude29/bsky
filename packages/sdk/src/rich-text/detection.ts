@@ -16,6 +16,16 @@ export type Facet = app.bsky.richtext.facet.Main
 const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
+ * A dot and a label character after a bare match mean the host continues into a label
+ * the ASCII grammar cannot reach: "example.com.рф" is one host, and linking the
+ * "example.com" inside it would point somewhere else. An internationalised domain is
+ * detected only when it carries a scheme, whose authority is not held to that grammar.
+ * The dot is required -- without one the host is already complete, so text running
+ * straight on from it is prose and "bsky.appを見て" still links bsky.app.
+ */
+const HOST_CONTINUES_REGEX = /^\.[\p{L}\p{N}\p{M}]/u
+
+/**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
  * excluded, since example.com/foo_bar and example.com/~user are legitimate endings. The
  * quotes and brackets need no entry either: util.ts's WRAPPERS keeps them out of the
@@ -128,6 +138,9 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         if (text.utf16[index.end] === '(') {
           continue
         }
+        if (HOST_CONTINUES_REGEX.test(text.utf16.slice(index.end))) {
+          continue
+        }
       }
 
       const trimmed = trimTrailing(match[2])
@@ -171,6 +184,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
 
       const start = text.utf16.indexOf(match[3], match.index) - 1
       const end = start + match[3].length + 1
+      // A handle is ASCII -- @atproto/syntax admits [a-zA-Z0-9.-] alone -- so a host
+      // continuing into another script is not one; @alice.xn--p1ai is how it is written.
+      if (HOST_CONTINUES_REGEX.test(text.utf16.slice(end))) {
+        continue
+      }
       facets.push(
         app.bsky.richtext.facet.$build({
           index: {

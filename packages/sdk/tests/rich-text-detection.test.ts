@@ -671,6 +671,19 @@ const linkCases: [string, [string, string][]][] = [
   // A letter directly before a URL suppresses detection in every script. CJK is
   // written without spaces, so a URL run straight against it is not detected.
   ['日本語bsky.app', []],
+  // The same rule on the other side. A dot and a label character continue the host
+  // into a label the ASCII grammar cannot reach, so an internationalised domain is
+  // detected only with a scheme.
+  ['example.com.рф', []],
+  ['example.com.рф/path', []],
+  [
+    'https://example.com.рф',
+    [['https://example.com.рф', 'https://example.com.рф']],
+  ],
+  // Without a dot the host is complete and what follows is prose. CJK is written
+  // without spaces, so this is the common shape rather than a curiosity.
+  ['bsky.appを見て', [['bsky.app', 'https://bsky.app']]],
+  ['example.com。', [['example.com', 'https://example.com']]],
 
   // An over-long port fails the whole port group rather than matching a
   // five-digit prefix of it.
@@ -866,6 +879,9 @@ const mentionCases: [string, [string, string][]][] = [
   // An internationalised handle can only be written as an A-label: @atproto/syntax
   // admits [a-zA-Z0-9.-] alone.
   ['@alice.xn--p1ai hi', [['@alice.xn--p1ai', 'alice.xn--p1ai']]],
+  // ...and only that spelling: a handle is ASCII, so a host continuing into another
+  // script is not one.
+  ['@alice.com.рф', []],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]
