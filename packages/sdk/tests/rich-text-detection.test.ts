@@ -683,6 +683,10 @@ const linkCases: [string, [string, string][]][] = [
   // The same rule reaching inside a label rather than across a dot: UTS 46 maps the
   // fullwidth "ｍ" into it, so this names example.com and not the example.co inside it.
   ['example.coｍ', []],
+  // ...and the separators and invisibles IDNA folds into a name reach it the same way.
+  ['example.com\u3002みんな', []],
+  ['example.com\uFF61みんな', []],
+  ['example.co\u00ADm', []],
   [
     'https://example.com.みんな',
     [['https://example.com.みんな', 'https://example.com.みんな']],
@@ -732,6 +736,15 @@ const linkCases: [string, [string, string][]][] = [
   [
     '`https://example.com`following',
     [['https://example.com', 'https://example.com']],
+  ],
+  // The tail ran past the closer, so what follows it is still unread text rather than
+  // part of the match: both of these are links.
+  [
+    '"https://one.com/path"https://two.com',
+    [
+      ['https://one.com/path', 'https://one.com/path'],
+      ['https://two.com', 'https://two.com'],
+    ],
   ],
   // A quote nothing opened is path content. These are real pages, which MediaWiki serves
   // without percent-encoding, so banning the character outright would point them at
@@ -940,6 +953,7 @@ const mentionCases: [string, [string, string][]][] = [
   // script is not one.
   ['@alice.com.みんな', []],
   ['@alice.coｍ', []],
+  ['@alice.co\u00ADm', []],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]

@@ -22,20 +22,33 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * internationalised domain is detected only when it carries a scheme, whose authority is
  * not held to the ASCII label grammar.
  *
- * Tested against NFKC-normalised text, which is what folds the compatibility forms --
- * fullwidth, roman-numeral and mathematical letters alike -- onto the first alternative,
- * and a fullwidth stop onto the second. The text after a match never begins with a real
- * ASCII letter or digit, the label grammar being greedy, so the first alternative fires
- * only on a character that normalisation mapped into the label. "-" is deliberately
- * absent: a trailing hyphen ends a name rather than continuing it.
+ * Tested against text put through the IDNA mappings that decide where a label ends:
+ * NFKC folds the compatibility forms -- fullwidth, roman-numeral and mathematical
+ * letters alike -- onto the first alternative, IDNA_DOT_REGEX folds the other separators
+ * onto the second, and IDNA_IGNORED_REGEX removes what neither side of a label can be
+ * separated by. The text after a match never begins with a real ASCII letter or digit,
+ * the label grammar being greedy, so the first alternative fires only on a character one
+ * of those mappings put there. "-" is deliberately absent: a trailing hyphen ends a name
+ * rather than continuing it.
  *
  * A letter that is not mapped stays prose, which is what leaves "bsky.appを見て" linking
- * bsky.app -- CJK is written without spaces, and the host is already complete.
+ * bsky.app -- CJK is written without spaces, and the host is already complete. So does a
+ * separator with nothing after it: "example.com。" ends a sentence.
  */
 const HOST_CONTINUES_REGEX = /^(?:[A-Za-z0-9]|\.[\p{L}\p{N}\p{M}])/u
 
-/** Enough for a dot and an astral code point, which is all HOST_CONTINUES_REGEX reads. */
-const HOST_CONTINUES_SPAN = 4
+/** The label separators IDNA accepts besides ".", per UTS 46 and RFC 3490 §3.1. */
+const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
+
+/**
+ * Invisible characters IDNA drops or refuses. Either way they cannot hold two labels
+ * apart, so what reads as one name is one name: "example.co\u00ADm" renders as
+ * example.com, and linking the example.co inside it would point somewhere else.
+ */
+const IDNA_IGNORED_REGEX = /[\u00AD\u200B-\u200D\u2060\uFEFF]/g
+
+/** A separator, a couple of invisibles and an astral code point: all the test reads. */
+const HOST_CONTINUES_SPAN = 6
 
 /**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
@@ -82,7 +95,11 @@ const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
 ])
 
 function hostContinues(text: string, at: number): boolean {
-  const after = text.slice(at, at + HOST_CONTINUES_SPAN).normalize('NFKC')
+  const after = text
+    .slice(at, at + HOST_CONTINUES_SPAN)
+    .normalize('NFKC')
+    .replace(IDNA_IGNORED_REGEX, '')
+    .replace(IDNA_DOT_REGEX, '.')
   return HOST_CONTINUES_REGEX.test(after)
 }
 
@@ -194,7 +211,13 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const closer = WRAPPER_PAIRS.get(match[1][0])
       if (closer !== undefined) {
         const at = matched.indexOf(closer)
-        if (at !== -1) matched = matched.slice(0, at)
+        if (at !== -1) {
+          matched = matched.slice(0, at)
+          // The tail ran to the next space, so the closer and everything after it are
+          // text the scan has not read yet: "https://a.com/x"https://b.com holds two
+          // links, and without this the second is stepped over.
+          re.lastIndex = start + matched.length
+        }
       }
 
       const trimmed = trimTrailing(matched)
