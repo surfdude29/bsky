@@ -677,6 +677,16 @@ const linkCases: [string, [string, string][]][] = [
   // RFC 3986 Appendix C delimiters, so neither belongs to the URL.
   ['https://example.com@', [['https://example.com', 'https://example.com']]],
   ['<https://example.com>', [['https://example.com', 'https://example.com']]],
+  // ...and the closing bracket is not absorbed when prose runs straight on from it.
+  // Angle brackets are outside the match grammar, so this holds with a path too.
+  [
+    '<https://example.com>following',
+    [['https://example.com', 'https://example.com']],
+  ],
+  [
+    '<https://example.com/path>following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
   // ...but RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, a query and a
   // fragment, and must survive there.
   [
@@ -776,6 +786,10 @@ const schemedCases: [string, [string, string][]][] = [
     "https://o'reilly@example.com/",
     [["https://o'reilly@example.com/", "https://o'reilly@example.com/"]],
   ],
+  // ...and only when that "@" is inside the authority. A quote is a hard stop, so the
+  // "@" here is unreachable from the apostrophe and there is no userinfo: the host ends
+  // at the apostrophe, exactly as "https://example.com'dan" does. Short, but honest.
+  ['https://o\'reilly"@example.com', [['https://o', 'https://o']]],
   // A match that trims down to nothing but its scheme is not a link.
   ['https://,,,', []],
   ['(https://)', []],

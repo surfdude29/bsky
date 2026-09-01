@@ -19,7 +19,13 @@ const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
 // rather than matching a prefix, so "example.com:123456/path" is not
 // "example.com:12345".
 const PORT = '(?::\\d{1,5}(?!\\d))?'
-const TAIL = '(?:[/?#][^\\s]*)?'
+
+// Angle brackets are excluded here and from AUTHORITY_STOP below. RFC 3986 Appendix C
+// wraps a URI in them precisely because they cannot occur inside one -- they are in no
+// URI production unencoded -- so "<https://example.com/path>then" is a link followed by
+// prose, not a path ending in ">then". This is not the deferred path-bounding work: ",",
+// "." and "!" are legal in a path and need a judgement call, these never are.
+const TAIL = '(?:[/?#][^\\s<>]*)?'
 
 // A schemed URL's authority: any non-space run up to an RFC 3986 §3.2 delimiter, not
 // the LDH grammar above, which would truncate IDN hosts ("https://münchen.de" ->
@@ -32,7 +38,14 @@ const TAIL = '(?:[/?#][^\\s]*)?'
 // example.com -- while an apostrophe followed by an "@" in the same authority is
 // userinfo and is kept ("https://o'reilly@example.com"). The two alternatives are
 // disjoint, so the group cannot backtrack.
-const AUTHORITY = "(?:[^\\s/?#'\"‘’“”]|['’](?=[^\\s/?#]*@))+"
+//
+// The lookahead spans AUTHORITY_STOP rather than the §3.2 delimiters alone, so it cannot
+// admit an apostrophe on the strength of an "@" lying past the point the authority itself
+// ends: in "https://o'reilly\"@example.com" the quote is a hard stop, so that "@" is no
+// userinfo and the host ends at the apostrophe. "'" and "’" are deliberately absent from
+// the stop set, being the conditional pair the lookahead must still be able to cross.
+const AUTHORITY_STOP = '\\s/?#"‘“”<>'
+const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]*@))+`
 
 // What may precede a URL or a handle: anything that is not a letter, a digit or a
 // combining mark, and not "@", "#" or "$". A deny-list rather than an allow-list, so
