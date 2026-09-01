@@ -328,6 +328,7 @@ describe('detectFacets', () => {
         ],
       ],
       ['this #️⃣tag should not be a tag', [], []],
+      ['nor is this #⃣tag, written without the variation selector', [], []],
       [
         'this ##️⃣tag should be a tag',
         ['#️⃣tag'],
@@ -679,6 +680,9 @@ const linkCases: [string, [string, string][]][] = [
   // detected only with a scheme.
   ['example.com.みんな', []],
   ['example.com.みんな/path', []],
+  // The same rule reaching inside a label rather than across a dot: UTS 46 maps the
+  // fullwidth "ｍ" into it, so this names example.com and not the example.co inside it.
+  ['example.coｍ', []],
   [
     'https://example.com.みんな',
     [['https://example.com.みんな', 'https://example.com.みんな']],
@@ -921,6 +925,7 @@ const mentionCases: [string, [string, string][]][] = [
   // ...and only that spelling: a handle is ASCII, so a host continuing into another
   // script is not one.
   ['@alice.com.みんな', []],
+  ['@alice.coｍ', []],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]

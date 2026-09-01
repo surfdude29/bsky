@@ -16,14 +16,26 @@ export type Facet = app.bsky.richtext.facet.Main
 const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
 
 /**
- * A dot and a label character after a bare match mean the host continues into a label
- * the ASCII grammar cannot reach: "example.com.みんな" is one host, and linking the
- * "example.com" inside it would point somewhere else. An internationalised domain is
- * detected only when it carries a scheme, whose authority is not held to that grammar.
- * The dot is required -- without one the host is already complete, so text running
- * straight on from it is prose and "bsky.appを見て" still links bsky.app.
+ * Whether the host runs on past a bare match, either into a further label or further
+ * inside the current one: "example.com.みんな" and "example.coｍ" each name one host, and
+ * linking the "example.com" inside either would point somewhere else. An
+ * internationalised domain is detected only when it carries a scheme, whose authority is
+ * not held to the ASCII label grammar.
+ *
+ * Tested against NFKC-normalised text, which is what folds the compatibility forms --
+ * fullwidth, roman-numeral and mathematical letters alike -- onto the first alternative,
+ * and a fullwidth stop onto the second. The text after a match never begins with a real
+ * ASCII letter or digit, the label grammar being greedy, so the first alternative fires
+ * only on a character that normalisation mapped into the label. "-" is deliberately
+ * absent: a trailing hyphen ends a name rather than continuing it.
+ *
+ * A letter that is not mapped stays prose, which is what leaves "bsky.appを見て" linking
+ * bsky.app -- CJK is written without spaces, and the host is already complete.
  */
-const HOST_CONTINUES_REGEX = /^\.[\p{L}\p{N}\p{M}]/u
+const HOST_CONTINUES_REGEX = /^(?:[A-Za-z0-9]|\.[\p{L}\p{N}\p{M}])/u
+
+/** Enough for a dot and an astral code point, which is all HOST_CONTINUES_REGEX reads. */
+const HOST_CONTINUES_SPAN = 4
 
 /**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
@@ -68,6 +80,11 @@ const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
   ['\u00AB', '\u00BB'],
   ['`', '`'],
 ])
+
+function hostContinues(text: string, at: number): boolean {
+  const after = text.slice(at, at + HOST_CONTINUES_SPAN).normalize('NFKC')
+  return HOST_CONTINUES_REGEX.test(after)
+}
 
 function countChar(str: string, char: string): number {
   let n = 0
@@ -151,7 +168,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         if (text.utf16[index.end] === '(') {
           continue
         }
-        if (HOST_CONTINUES_REGEX.test(text.utf16.slice(index.end))) {
+        if (hostContinues(text.utf16, index.end)) {
           continue
         }
       }
@@ -206,7 +223,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const end = start + match[3].length + 1
       // A handle is ASCII -- @atproto/syntax admits [a-zA-Z0-9.-] alone -- so a host
       // continuing into another script is not one. It is written @alice.xn--q9jyb4c.
-      if (HOST_CONTINUES_REGEX.test(text.utf16.slice(end))) {
+      if (hostContinues(text.utf16, end)) {
         continue
       }
       facets.push(

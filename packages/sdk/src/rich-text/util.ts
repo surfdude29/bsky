@@ -72,8 +72,8 @@ const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]{0,2
 // "1️⃣" is a digit, a variation selector and U+20E3, which is a base the list excludes
 // followed by marks. Spelling them out is what makes the "emoji" above true rather than
 // nearly true. The variation selector is optional, since older text writes the sequence
-// without it. "#️⃣" costs nothing here -- TAG_REGEX's own `(?!\ufe0f)` already refuses to
-// read it as a hashtag.
+// without it. The "#" form costs nothing here -- TAG_REGEX's guard below excludes both
+// spellings from being read as a hashtag.
 const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
 const LEAD = `(^|${KEYCAP}|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)`
 
@@ -97,12 +97,13 @@ export const URL_REGEX = new RegExp(
 export const TRAILING_PUNCTUATION_REGEX = /\p{P}+$/gu
 
 /**
- * `\ufe0f` emoji modifier
+ * `\ufe0f` emoji modifier, `\u20e3` combining enclosing keycap: a "#" carrying either
+ * opens the keycap emoji KEYCAP admits above, not a hashtag.
  * `\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2` zero-width spaces (likely incomplete)
  */
 export const TAG_REGEX =
   // eslint-disable-next-line no-misleading-character-class
-  /(^|\s)[#＃]((?!\ufe0f)[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*[^\d\s\p{P}\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]+[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*)?/gu
+  /(^|\s)[#＃]((?![\ufe0f\u20e3])[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*[^\d\s\p{P}\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]+[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*)?/gu
 
 export const CASHTAG_REGEX =
   /(^|\s|\()\$([A-Za-z][A-Za-z0-9]{0,4})(?=\s|$|[.,;:!?)"'\u2019])/gu
