@@ -2,12 +2,12 @@
 '@bsky/sdk': minor
 ---
 
-Fix a range of rich-text link and mention detection bugs.
+Fix a range of rich-text link and mention detection bugs, and one hashtag case.
 
 - **The host is bounded.** `[\S]+` ran to the next whitespace and was repaired
   afterwards. The authority now ends at the RFC 3986 §3.2 delimiters, plus quotes and --
-  in the host -- apostrophes, and the trim strips trailing sentence punctuation along
-  with any excess closing bracket.
+  in the host -- apostrophes, and the trim strips trailing sentence punctuation, in any
+  script, along with any excess closing bracket.
 - **A wrapper ends a URL when it is the one that opened it,** so the closer is not
   absorbed when prose runs on from it, while a quote the path itself carries survives
   (`https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic`). Only the unambiguous openers
@@ -29,6 +29,10 @@ Fix a range of rich-text link and mention detection bugs.
 - **Facets are no longer nested inside one another,** and a bare domain followed
   immediately by `(` is treated as a method call rather than a URL, since `.now` and
   `.map` are real TLDs.
+- **`TAG_REGEX`'s keycap guard widens** from a lone variation selector to either spelling
+  of the sequence, so `#⃣tag` -- a keycap emoji rather than a hashtag -- no longer produces
+  a tag of `⃣tag`. This is the one hashtag behaviour that changes; `CASHTAG_REGEX` and
+  `TRAILING_PUNCTUATION_REGEX` are untouched.
 
 Together these fix run-on text (`example.com,then`), suffixation absorbed into the host
 (`example.com'dan`), uppercase (`HTTPS://EXAMPLE.COM`), hyphens and digit-leading labels

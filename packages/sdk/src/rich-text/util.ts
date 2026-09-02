@@ -85,7 +85,7 @@ export const URL_REGEX = new RegExp(
 export const TRAILING_PUNCTUATION_REGEX = /\p{P}+$/gu
 
 /**
- * `\ufe0f` emoji modifier, `\u20e3` combining enclosing keycap: a "#" carrying either
+ * `\ufe0f` variation selector-16, `\u20e3` combining enclosing keycap: a "#" carrying either
  * opens the keycap emoji KEYCAP admits above, not a hashtag.
  * `\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2` zero-width spaces (likely incomplete)
  */

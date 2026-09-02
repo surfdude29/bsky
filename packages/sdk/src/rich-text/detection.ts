@@ -25,14 +25,22 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * folds the compatibility forms onto the first alternative, IDNA_DOT_REGEX folds the
  * other separators onto the second, and IDNA_IGNORED_REGEX drops what cannot separate
  * two labels. The label grammar is greedy, so what follows a match never begins with a
- * real ASCII letter or digit, and the first alternative fires only on a character one of
- * those mappings put there. "-" is deliberately absent: a trailing hyphen ends a name.
+ * real ASCII letter or digit, and the first alternative fires on a character one of those
+ * mappings put there, or on a combining mark. "-" is deliberately absent: a trailing
+ * hyphen ends a name.
  *
- * An unmapped letter stays prose, which leaves "bsky.appを見て" linking bsky.app -- CJK
- * is written without spaces and the host is already complete -- and so does a separator
- * with nothing after it: "example.com。" ends a sentence.
+ * A mark is in that branch because it attaches to the letter the match just ended on
+ * rather than beginning anything after it: "example.com\u0301" is example.coḿ, which is
+ * example.xn--co-1ws, and a facet over the example.com inside it would cut a grapheme
+ * cluster in half as well as name the wrong host. An unmapped *letter* there is prose
+ * instead, which leaves "bsky.appを見て" linking bsky.app -- CJK is written without spaces
+ * and the host is already complete -- and so is a separator with nothing after it:
+ * "example.com。" ends a sentence. The two rules part over the spelling of a diacritic,
+ * precomposed "example.comé" still linking example.com where the decomposed form now
+ * links nothing. That is the safe direction of the two, and composing the mark onto its
+ * base instead would mean reading back past the match.
  */
-const HOST_CONTINUES_REGEX = /^(?:[A-Za-z0-9]|\.[\p{L}\p{N}\p{M}])/u
+const HOST_CONTINUES_REGEX = /^(?:[A-Za-z0-9\p{M}]|\.[\p{L}\p{N}\p{M}])/u
 
 /** The label separators IDNA accepts besides ".", per UTS 46 and RFC 3490 §3.1. */
 const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
@@ -57,10 +65,18 @@ const HOST_CONTINUES_SPAN = 3
  * reaching the trim is one the path itself carries. What remains is sentence
  * punctuation, prose after a link far more often than the last character of a path; the
  * cost is that a path genuinely ending in one is truncated. AUTHORITY_ONLY_STRIP below
- * strikes the opposite balance for characters common in real paths. No `g` flag: this is
- * used with `.test()` on single characters, which `g` would make stateful.
+ * strikes the opposite balance for characters common in real paths.
+ *
+ * Terminal_Punctuation is that set in every script rather than in ASCII alone. Its ASCII
+ * members are exactly the six characters the property replaces -- "!", ",", ".", ":", ";"
+ * and "?" -- so nothing about an ASCII URL changes, while the sentence a CJK or Arabic
+ * reader writes now ends the same way an English one does: "https://example.com？"
+ * otherwise carries a host no URL parser accepts, and "https://example.com/記事。" a path
+ * that 404s. The ellipsis and the dashes carry no such property and stay enumerated. No
+ * `g` flag: this is used with `.test()` on single characters, which `g` would make
+ * stateful.
  */
-const TRAILING_STRIP_REGEX = /[.,;:!?\u2026\u2013\u2014]/
+const TRAILING_STRIP_REGEX = /[\p{Terminal_Punctuation}\u2026\u2013\u2014]/u
 
 /**
  * Stripped only from an authority. All three are sub-delims or gen-delims that RFC 3986

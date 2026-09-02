@@ -703,6 +703,18 @@ const linkCases: [string, [string, string][]][] = [
   // without spaces, so this is the common shape rather than a curiosity.
   ['bsky.appを見て', [['bsky.app', 'https://bsky.app']]],
   ['example.com。', [['example.com', 'https://example.com']]],
+  // ...and the same rule reaching inside a label with no separator at all: a combining
+  // mark attaches to the "m" the match ended on, so this names example.coḿ --
+  // example.xn--co-1ws -- and a facet over the example.com inside it would split a
+  // grapheme cluster as well. Written as escapes, a mark being invisible beside its base.
+  ['example.com\u0301.org', []],
+  ['example.com\u0301', []],
+  // A mark inside a path is part of the path: the tail runs to the next whitespace, so it
+  // falls inside the match rather than after it.
+  [
+    'example.com/cafe\u0301',
+    [['example.com/cafe\u0301', 'https://example.com/cafe\u0301']],
+  ],
 
   // An over-long port fails the whole port group rather than matching a
   // five-digit prefix of it.
@@ -839,6 +851,16 @@ const linkCases: [string, [string, string][]][] = [
     'check out https://example.com/foo!',
     [['https://example.com/foo', 'https://example.com/foo']],
   ],
+  // The trim is not ASCII-only: these end a sentence the way the writing system ends one.
+  // Left in place, the first is a host no URL parser accepts and the second a path that
+  // does not exist.
+  ['https://example.com？', [['https://example.com', 'https://example.com']]],
+  [
+    'これを見て https://example.com/記事。',
+    [['https://example.com/記事', 'https://example.com/記事']],
+  ],
+  ['example.com/foo！', [['example.com/foo', 'https://example.com/foo']]],
+  ['https://example.com؟', [['https://example.com', 'https://example.com']]],
   // Which component the "@" sits in is decided per "@", not once per URL: stripping
   // the trailing "?" moves it into the authority in the first two and leaves it in
   // the path in the third.
@@ -969,6 +991,10 @@ const mentionCases: [string, [string, string][]][] = [
   ['@alice.com.みんな', []],
   ['@alice.coｍ', []],
   ['@alice.co\u00ADm', []],
+  // ...a mark continuing the last label among them: this names alice.coḿ, and the
+  // facet would resolve and notify a different account.
+  ['@alice.com\u0301.org', []],
+  ['@alice.com\u0301 hi', []],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]
