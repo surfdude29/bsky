@@ -88,6 +88,11 @@ const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
  * https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic, which nothing opened, keeps the
  * quotes its path carries. Angle brackets need no entry, the grammar excluding them from
  * a match entirely.
+ *
+ * Only the unambiguous openers are paired. An ASCII apostrophe is deliberately absent,
+ * being an apostrophe at least as often as a quote: pairing it would cut
+ * 'https://example.com/it's-fine' down to /it. Where one ends a host the authority grammar
+ * decides instead, which is what keeps example.com'dan linking example.com.
  */
 const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
   ['"', '"'],
