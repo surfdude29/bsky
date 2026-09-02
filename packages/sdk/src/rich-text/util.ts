@@ -19,10 +19,13 @@ const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
 const PORT = '(?::\\d{1,5}(?!\\d))?'
 
 // The tail runs to the next whitespace, excluding angle brackets alone: RFC 3986
-// Appendix C wraps a URI in them precisely because they cannot occur inside one. Quotes
-// can occur -- https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic is a real page -- so
-// what closes a quoted URL is decided in detectFacets, from the wrapper that opened it.
-const TAIL = '(?:[/?#][^\\s<>]*)?'
+// Appendix C wraps a URI in them precisely because they cannot occur inside one. That is
+// a fact about the character rather than its width, so the fullwidth and small spellings
+// are excluded beside the ASCII pair, as they are from AUTHORITY_STOP below. Quotes can
+// occur -- https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic is a real page -- so what
+// closes a quoted URL is decided in detectFacets, from the wrapper that opened it.
+const ANGLE_BRACKETS = '<>\\uFF1C\\uFF1E\\uFE64\\uFE65'
+const TAIL = `(?:[/?#][^\\s${ANGLE_BRACKETS}]*)?`
 
 // A schemed URL's authority in the shape RFC 3986 §3.2 gives it: an optional userinfo
 // ending in "@", then a host. Neither is held to the LDH grammar above, which would
@@ -42,9 +45,10 @@ const TAIL = '(?:[/?#][^\\s<>]*)?'
 //
 // U+FF02 and U+FF40 close the list: they are the fullwidth spellings of the quote and the
 // backtick already in it, WRAPPER_PAIRS pairs them as such, and an authority ends at one
-// for the same reason it ends at the ASCII pair. Escaped rather than written out, being
-// hard to tell apart from those on the page.
-const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>\\uFF02\\uFF40'
+// for the same reason it ends at the ASCII pair. The angle brackets carry their own
+// spellings for the same reason. Escaped rather than written out, being hard to tell
+// apart from those on the page.
+const AUTHORITY_STOP = `\\s/?#"“”‘«»\`${ANGLE_BRACKETS}\\uFF02\\uFF40`
 const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
 
 // What may precede a URL or a handle: anything that is not a letter, a digit or a

@@ -841,6 +841,16 @@ const linkCases: [string, [string, string][]][] = [
   ['example.com\uFF0D\uFF0D\uFF0D\uFF0D\uFF0Dfoo', []],
   // ...but a trailing hyphen ends a name rather than continuing it, mapped or not.
   ['example.com\uFF0D', [['example.com', 'https://example.com']]],
+  // ...and the character after the run need not be ASCII: "example.com-foo" is no facet
+  // at all, LABEL taking it whole and the TLD check refusing it, so the two spellings of
+  // that shape answer alike.
+  ['example.com-foo', []],
+  ['example.com-みんな', []],
+  ['example.com-', [['example.com', 'https://example.com']]],
+  // An unmapped digit is prose, as an unmapped letter is: U+0661 ARABIC-INDIC DIGIT ONE
+  // is no more folded by the mappings than a kana, and the rule that keeps
+  // "bsky.appを見て" linking keeps this one linking too.
+  ['example.com\u0661', [['example.com', 'https://example.com']]],
   // A mark inside a path is part of the path: the tail runs to the next whitespace, so it
   // falls inside the match rather than after it.
   [
@@ -862,6 +872,16 @@ const linkCases: [string, [string, string][]][] = [
   ['<https://example.com>', [['https://example.com', 'https://example.com']]],
   // ...and the closing bracket is not absorbed when prose runs straight on from it.
   // Angle brackets are outside the match grammar, so this holds with a path too.
+  // ...in every spelling, RFC 3986 Appendix C being about the character rather than its
+  // width. U+FF1C/U+FF1E are the fullwidth pair, U+FE64/U+FE65 the small forms.
+  [
+    '\uFF1Chttps://example.com/path\uFF1Efollowing',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\uFE64https://example.com/path\uFE65following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
   [
     '<https://example.com>following',
     [['https://example.com', 'https://example.com']],
@@ -1168,6 +1188,18 @@ const mentionCases: [string, [string, string][]][] = [
   // this a path, and an "@" an email address.
   ['path/\u00AD@alice.com', []],
   ['foo@\u00AD@alice.com', []],
+  // Punctuation that ends an email local part reads as an address, not a mention: these
+  // name foo_@example.com and its siblings, which the "@" the lead-in excludes would have
+  // kept out had the local part ended in a letter. The mapped spelling comes with them.
+  ['foo_@example.com', []],
+  ['foo-@example.com', []],
+  ['foo+@example.com', []],
+  ['foo\uFF3F@example.com', []],
+  // ...and only that punctuation. The rest of RFC 5321's atext is legal in a local part
+  // and never used, so it stays prose, and the quote marks stay with the apostrophe issue
+  // 7341 turns on -- which leaves a quoted local part reading as a mention.
+  ['wow!@alice.test', [['@alice.test', 'alice.test']]],
+  ['"foo"@example.com', [['@example.com', 'example.com']]],
   // ...and a mapping stands in for the character as an invisible does: U+24D0 folds to
   // "a" and U+FF20 to "@", so these are the name aexample and an email address.
   ['\u24D0@alice.com', []],
@@ -1178,6 +1210,8 @@ const mentionCases: [string, [string, string][]][] = [
   // facet would resolve and notify a different account.
   ['@alice.com\u0301.org', []],
   ['@alice.com\u0301 hi', []],
+  // ...and a hyphen carrying the name on, as it does for a link.
+  ['@alice.com-みんな', []],
   // An unmapped letter is prose here as it is for a link: CJK runs straight against a
   // handle that is already complete.
   ['@alice.comを見て', [['@alice.com', 'alice.com']]],

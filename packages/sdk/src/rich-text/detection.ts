@@ -32,21 +32,26 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * mappings put there, or on a combining mark. The hyphen branch is the same: an ASCII one
  * is inside LABEL already, so only a mapped hyphen -- "example.com\uFF0Dfoo" is
  * example.com-foo -- ever reaches it. It reads a run of them only where a label character
- * follows, a trailing hyphen ending a name rather than continuing it.
+ * follows, a trailing hyphen ending a name rather than continuing it. That character need
+ * not be ASCII: "example.com-foo" is no facet at all, LABEL taking it whole and the TLD
+ * check refusing it, so "example.com-みんな" being a link to example.com would be two
+ * spellings of one shape answering differently.
  *
  * A mark is in that branch because it attaches to the letter the match just ended on
  * rather than beginning anything after it: "example.com\u0301" is example.coḿ, which is
  * example.xn--co-1ws, and a facet over the example.com inside it would cut a grapheme
- * cluster in half as well as name the wrong host. An unmapped *letter* there is prose
- * instead, which leaves "bsky.appを見て" linking bsky.app -- CJK is written without spaces
- * and the host is already complete -- and so is a separator with nothing after it:
+ * cluster in half as well as name the wrong host. An unmapped *letter or digit* there is
+ * prose instead, which leaves "bsky.appを見て" linking bsky.app -- CJK is written without
+ * spaces and the host is already complete -- and "example.com\u0661" linking example.com,
+ * an Arabic-Indic digit being no more mapped than a kana. And so is a separator with
+ * nothing after it:
  * "example.com。" ends a sentence. The two rules part over the spelling of a diacritic,
  * precomposed "example.comé" still linking example.com where the decomposed form now
  * links nothing. That is the safe direction of the two, and composing the mark onto its
  * base instead would mean reading back past the match.
  */
 const HOST_CONTINUES_REGEX =
-  /^(?:[A-Za-z0-9\p{M}]|-+[A-Za-z0-9]|\.[\p{L}\p{N}\p{M}])/u
+  /^(?:[A-Za-z0-9\p{M}]|-+[\p{L}\p{N}]|\.[\p{L}\p{N}\p{M}])/u
 
 /** The label separators IDNA accepts besides ".", per UTS 46 and RFC 3490 §3.1. */
 const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
@@ -66,6 +71,20 @@ const IDNA_SEPARATOR_REGEX = /^[-.]+$/
 
 /** A mark belongs to the character before it, on either side of a match. */
 const MARK_REGEX = /\p{M}/u
+
+/**
+ * Punctuation that ends an email local part, and so precedes an address rather than a
+ * mention: "foo_@example.com" names foo_@example.com, which the "@" the lead-in excludes
+ * would have kept out had the local part ended in a letter. These three are what a local
+ * part is actually written with; the rest of RFC 5321's atext is legal there and never
+ * used, so refusing it would only cost prose -- "wow!@alice.test" is a mention.
+ *
+ * "'" is deliberately absent, and with it the quotation marks: issue 7341 is
+ * "l'@atproto.com", and "‘@alice.test’" is a mention being quoted. The cost is the two
+ * shapes those leave behind, an apostrophe-final local part and a quoted one
+ * ("foo'@example.com", "\"foo\"@example.com"), which read as mentions still.
+ */
+const EMAIL_TAIL_REGEX = /^[-_+]$/
 
 /**
  * What a schemeless match may not follow, over and above the lead-in's own exclusions: a
@@ -344,6 +363,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         // Heuristic: a bare domain immediately followed by "(" is a method call.
         // ".now", ".map", ".call" and ".run" are all real TLDs, so performance.now()
         // and array.map(fn) would otherwise linkify. Costs "example.com(new tab)".
+        //
+        // The character is read as written, where the boundary rules read it mapped:
+        // code is written in ASCII, and "example.com（new tab）" is a parenthetical in
+        // ordinary Japanese typography rather than a call. So "performance.now（)"
+        // linkifies, which no code is written like.
         if (text.utf16[index.end] === '(') {
           continue
         }
@@ -407,7 +431,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const start = text.utf16.indexOf(match[3], match.index) - 1
       const end = start + match[3].length + 1
       const mapping = idnaMap(boundaryBefore(text.utf16, start))
-      if (mapping === '/' || LEAD_EXCLUDED_REGEX.test(mapping)) {
+      if (
+        mapping === '/' ||
+        EMAIL_TAIL_REGEX.test(mapping) ||
+        LEAD_EXCLUDED_REGEX.test(mapping)
+      ) {
         continue
       }
       if (

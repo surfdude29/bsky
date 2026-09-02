@@ -24,12 +24,13 @@ Fix a range of rich-text link and mention detection bugs, and one hashtag case.
   grammar and is dropped where the name reaches past it, into a further label or into a
   character IDNA maps inside the current one (`example.com.みんな`, `example.coｍ`), so an
   internationalized domain is detected only in its punycode spelling
-  (`example.xn--q9jyb4c`) or with a scheme (`https://münchen.de`). An unmapped letter is
-  prose rather than more of the name, so `bsky.appを見て` still links bsky.app.
+  (`example.xn--q9jyb4c`) or with a scheme (`https://münchen.de`). An unmapped letter or
+  digit is prose rather than more of the name, so `bsky.appを見て` still links bsky.app.
 - **A Unicode-aware deny-list decides what may precede a URL or handle,** in place of
   "start of text, space or open paren", with detection then rejecting `-`, `_`, `.` and
-  `/` before a schemeless URL and `/` before a mention. Every one of those exclusions is
-  put to the character a match really stands on: a soft hyphen written between `foo` and
+  `/` before a schemeless URL, and `/` or the punctuation an email local part ends in
+  (`foo_@example.com`) before a mention. Every one of those exclusions is put to the
+  character a match really stands on: a soft hyphen written between `foo` and
   `example.com` is dropped by IDNA rather than read as a break, leaving the one name
   fooexample.com, and a character the mappings fold into one of them stands in for it just
   as well -- `foo＠example.com` is an email address and `ⓐexample.com` the name
@@ -38,9 +39,9 @@ Fix a range of rich-text link and mention detection bugs, and one hashtag case.
   immediately by `(` is treated as a method call rather than a URL, since `.now` and
   `.map` are real TLDs.
 - **`TAG_REGEX`'s keycap guard widens** from a lone variation selector to either spelling
-  of the sequence, so `#⃣tag` -- a keycap emoji rather than a hashtag -- no longer produces
-  a tag of `⃣tag`. This is the one hashtag behaviour that changes; `CASHTAG_REGEX` and
-  `TRAILING_PUNCTUATION_REGEX` are untouched.
+  of the sequence, after either sigil, so `#⃣tag` and `＃⃣tag` -- a keycap emoji rather than
+  a hashtag -- no longer produce a tag of `⃣tag`. This is the one hashtag behaviour that
+  changes; `CASHTAG_REGEX` and `TRAILING_PUNCTUATION_REGEX` are untouched.
 
 Together these fix run-on text (`example.com,then`), suffixation absorbed into the host
 (`example.com'dan`), uppercase (`HTTPS://EXAMPLE.COM`), hyphens and digit-leading labels
