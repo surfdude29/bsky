@@ -192,9 +192,10 @@ function hostContinues(text: string, at: number): boolean {
 }
 
 /**
- * The character a match really begins after, as the mappings leave it. LEAD reads the raw
- * text, so it takes an invisible for a boundary and misses what a mapping folds a
- * character into; this rebuilds what it was looking at. The mirror of hostContinues, and
+ * The character a match really begins after, as written, once the invisibles IDNA drops
+ * and the marks that hang off it have been read past. LEAD reads the raw text, so it takes
+ * an invisible for a boundary and misses what a mapping folds a character into; this
+ * rebuilds what it was looking at, and the caller maps it where mapping is the question. The mirror of hostContinues, and
  * it reads the same way: invisibles are dropped as they are read and marks belong to the
  * character before them. Read through the mappings, as the caller does, that leaves
  * "foo\u00ADexample.com" the one name fooexample.com, "foo\uFF20example.com" an email

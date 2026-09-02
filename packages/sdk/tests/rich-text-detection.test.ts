@@ -759,6 +759,20 @@ const linkCases: [string, [string, string][]][] = [
       ],
     ],
   ],
+  // An authority ends at a wrapper in either spelling, nothing having opened these.
+  [
+    'https://example.com\uFF02following',
+    [['https://example.com', 'https://example.com']],
+  ],
+  [
+    'https://example.com\uFF40following',
+    [['https://example.com', 'https://example.com']],
+  ],
+  // ...while a path keeps one, as it keeps the quotes in the Weird_Al URL above.
+  [
+    'https://example.com/path\uFF02',
+    [['https://example.com/path\uFF02', 'https://example.com/path\uFF02']],
+  ],
   // A keycap is admitted whole, so it is read at its base rather than refused at its
   // U+20E3, which is a mark like any other -- as are the marks on any other boundary.
   ['1\uFE0F\u20E3\u00ADexample.com', [['example.com', 'https://example.com']]],

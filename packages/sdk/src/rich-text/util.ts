@@ -39,7 +39,12 @@ const TAIL = '(?:[/?#][^\\s<>]*)?'
 // in "https://o'reilly\"@example.com" the quote stops it, there is no userinfo, and the
 // host ends at the apostrophe. With no "@" ahead of it the run gives back a character at
 // a time, linear in what it scanned.
-const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>'
+//
+// U+FF02 and U+FF40 close the list: they are the fullwidth spellings of the quote and the
+// backtick already in it, WRAPPER_PAIRS pairs them as such, and an authority ends at one
+// for the same reason it ends at the ASCII pair. Escaped rather than written out, being
+// hard to tell apart from those on the page.
+const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>\\uFF02\\uFF40'
 const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
 
 // What may precede a URL or a handle: anything that is not a letter, a digit or a
