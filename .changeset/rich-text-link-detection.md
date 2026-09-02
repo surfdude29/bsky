@@ -21,8 +21,9 @@ Fix a range of rich-text link and mention detection bugs, and one hashtag case.
   deliberately exempt, so IDN hosts and IPv6 literals still work.
 - **Comparisons are ASCII case-insensitive, and internationalized TLDs are compared as
   punycode A-labels,** the only form ASCII text can carry. A bare domain is ASCII by
-  grammar and is dropped where the name reaches past it, into a further label or into a
-  character IDNA maps inside the current one (`example.com.みんな`, `example.coｍ`), so an
+  grammar and is dropped where the name reaches past it, into a further label, into a
+  character IDNA maps inside the current one (`example.com.みんな`, `example.coｍ`) or into
+  a diacritic on its last letter in either spelling (`example.coḿ`), so an
   internationalized domain is detected only in its punycode spelling
   (`example.xn--q9jyb4c`) or with a scheme (`https://münchen.de`). An unmapped letter or
   digit is prose rather than more of the name, so `bsky.appを見て` still links bsky.app.

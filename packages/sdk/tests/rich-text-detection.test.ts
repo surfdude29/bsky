@@ -830,6 +830,12 @@ const linkCases: [string, [string, string][]][] = [
   // grapheme cluster as well. Written as escapes, a mark being invisible beside its base.
   ['example.com\u0301.org', []],
   ['example.com\u0301', []],
+  // ...in either spelling. The read is NFD-decomposed after the mappings, so precomposed
+  // U+1E3F is the same "m" plus mark and answers alike; NFKC alone would compose it into
+  // one letter, read it as prose, and link example.co -- the wrong host. U+00E9 after a
+  // whole label is the one name example.comé for the same reason.
+  ['example.co\u1E3F', []],
+  ['example.com\u00E9', []],
   // ...and a hyphen IDNA maps into the label: U+FF0D FULLWIDTH HYPHEN-MINUS folds to
   // "-", so this names example.com-foo. An ASCII hyphen never reaches the test -- LABEL
   // takes "example.com-foo" whole and its TLD is not one.
@@ -865,6 +871,9 @@ const linkCases: [string, [string, string][]][] = [
     'example.com:99999/ok',
     [['example.com:99999/ok', 'https://example.com:99999/ok']],
   ],
+  // A port is the one way an ASCII letter can directly follow a bare match, the label
+  // grammar being greedy everywhere else; it is read as the name carrying on.
+  ['example.com:8080abc', []],
 
   // A trailing "@" closes a userinfo and leaves the host empty, and angle brackets are
   // RFC 3986 Appendix C delimiters, so neither belongs to the URL.
@@ -995,6 +1004,13 @@ const linkCases: [string, [string, string][]][] = [
       ],
     ],
   ],
+  // Only an asymmetric pair can be counted. A wrapper whose two marks are one character
+  // closes at the first, so a path carrying that character is cut there -- the known
+  // limit of pairing by opener.
+  [
+    '"https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic"following',
+    [['https://en.wikipedia.org/wiki/', 'https://en.wikipedia.org/wiki/']],
+  ],
   // With nothing to pair against, the same mark is part of the path.
   [
     'https://example.com/a’',
@@ -1121,6 +1137,23 @@ const schemedCases: [string, [string, string][]][] = [
   // userinfo run cannot reach that "@" and there is none: the host ends at the
   // apostrophe, exactly as "https://example.com'dan" does.
   ['https://o\'reilly"@example.com', [['https://o', 'https://o']]],
+  // Cutting the host at an apostrophe leaves the rest as unread text, and an apostrophe
+  // is an admitted lead-in for a bare domain, so one typed inside a host gives two
+  // facets. No registrable name carries one, so this is pinned rather than prevented.
+  [
+    "https://exam'ple.com/x",
+    [
+      ['https://exam', 'https://exam'],
+      ['ple.com/x', 'https://ple.com/x'],
+    ],
+  ],
+  [
+    'https://exam\u2019ple.com/x',
+    [
+      ['https://exam', 'https://exam'],
+      ['ple.com/x', 'https://ple.com/x'],
+    ],
+  ],
   // A match that trims down to nothing but its scheme is not a link.
   ['https://,,,', []],
   ['(https://)', []],
@@ -1210,6 +1243,12 @@ const mentionCases: [string, [string, string][]][] = [
   // facet would resolve and notify a different account.
   ['@alice.com\u0301.org', []],
   ['@alice.com\u0301 hi', []],
+  // ...in either spelling, the read being NFD-decomposed after the mappings.
+  ['@alice.co\u1E3F', []],
+  ['@alice.com\u00E9 hi', []],
+  // The schemed authority stops at the apostrophe, so the "@example.com" past the quote
+  // is unread text with a quote for a lead-in: a mention beside the https://o link.
+  ['https://o\'reilly"@example.com', [['@example.com', 'example.com']]],
   // ...and a hyphen carrying the name on, as it does for a link.
   ['@alice.com-みんな', []],
   // An unmapped letter is prose here as it is for a link: CJK runs straight against a

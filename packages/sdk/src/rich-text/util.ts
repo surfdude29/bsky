@@ -43,6 +43,11 @@ const TAIL = `(?:[/?#][^\\s${ANGLE_BRACKETS}]*)?`
 // host ends at the apostrophe. With no "@" ahead of it the run gives back a character at
 // a time, linear in what it scanned.
 //
+// Cutting the host there leaves the rest as unread text, so an apostrophe typed *inside*
+// a host -- "https://exam'ple.com/x" -- gives two facets, https://exam and then
+// ple.com/x, the apostrophe being an admitted lead-in for a bare domain. Accepted rather
+// than special-cased: no registrable name carries one, so the input is a typo either way.
+//
 // U+FF02 and U+FF40 close the list: they are the fullwidth spellings of the quote and the
 // backtick already in it, WRAPPER_PAIRS pairs them as such, and an authority ends at one
 // for the same reason it ends at the ASCII pair. The angle brackets carry their own

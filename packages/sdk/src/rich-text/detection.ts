@@ -27,9 +27,12 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * The text is first put through the IDNA mappings that decide where a label ends: NFKC
  * folds the compatibility forms onto the first alternative, IDNA_DOT_REGEX folds the
  * other separators onto the second, and IDNA_IGNORED_REGEX drops what cannot separate
- * two labels. The label grammar is greedy, so what follows a match never begins with a
- * real ASCII letter or digit, and the first alternative fires on a character one of those
- * mappings put there, or on a combining mark. The hyphen branch is nearly the same: LABEL
+ * two labels. The label grammar is greedy, so what follows a bare match begins with a
+ * real ASCII letter or digit only where PORT consumed a run of digits first --
+ * "example.com:8080abc" -- and that is read as the name carrying on rather than as a
+ * port. Otherwise the first alternative fires on a character one of those mappings put
+ * there, on a combining mark, or on the ASCII base a precomposed letter decomposes to,
+ * below. The hyphen branch is nearly the same: LABEL
  * carries on over an ASCII hyphen only where an ASCII letter or digit follows it, so what
  * reaches this check is either a mapped hyphen -- "example.com\uFF0Dfoo" is example.com-foo
  * -- or an ASCII one the grammar could not continue on. It reads a run of them only where a
@@ -47,10 +50,13 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * spaces and the host is already complete -- and "example.com\u0661" linking example.com,
  * an Arabic-Indic digit being no more mapped than a kana. And so is a separator with
  * nothing after it:
- * "example.com。" ends a sentence. The two rules part over the spelling of a diacritic,
- * precomposed "example.comé" still linking example.com where the decomposed form now
- * links nothing. That is the safe direction of the two, and composing the mark onto its
- * base instead would mean reading back past the match.
+ * "example.com。" ends a sentence. The read is NFD-decomposed after the mappings, so the
+ * two spellings of a diacritic answer alike: precomposed "example.co\u1E3F" decomposes
+ * to the "m" the grammar could not see plus its mark, and is dropped as the decomposed
+ * form is, where NFKC alone composes it into one letter and reads it as prose -- a link
+ * to example.co, which is the wrong host. "example.com\u00E9" is dropped the same way,
+ * being the one name example.comé. Decomposing forward reaches the base without reading
+ * back past the match, and a non-Latin base ("が" is "か" plus a mark) is still prose.
  */
 const HOST_CONTINUES_REGEX =
   /^(?:[A-Za-z0-9\p{M}]|-+[\p{L}\p{N}]|\.[\p{L}\p{N}\p{M}])/u
@@ -209,7 +215,7 @@ function hostContinues(text: string, at: number): boolean {
     after += ch
     if (!IDNA_SEPARATOR_REGEX.test(idnaMap(ch))) break
   }
-  return HOST_CONTINUES_REGEX.test(idnaMap(after))
+  return HOST_CONTINUES_REGEX.test(idnaMap(after).normalize('NFD'))
 }
 
 /**
