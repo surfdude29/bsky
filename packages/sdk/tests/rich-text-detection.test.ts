@@ -675,6 +675,20 @@ const linkCases: [string, [string, string][]][] = [
   // A letter directly before a URL suppresses detection in every script. CJK is
   // written without spaces, so a URL run straight against it is not detected.
   ['日本語bsky.app', []],
+  // ...and an invisible between the two does not make it one, IDNA dropping the
+  // character rather than reading a boundary in it: written out, these are the single
+  // names fooexample.com and 日本語example.com. Escaped, being invisible on the page.
+  ['foo\u00ADexample.com', []],
+  ['foo\u200Bexample.com', []],
+  ['日本語\u200Cexample.com', []],
+  // ...however many of them, as on the other side.
+  [`foo${'\u00AD'.repeat(6)}example.com`, []],
+  // What lies past them is what decides, so with nothing before them the name is
+  // example.com and the link stands.
+  ['\u00ADexample.com', [['example.com', 'https://example.com']]],
+  // A schemed URL reaches the same rule: this is foohttps://example.com, a URL written
+  // against a word.
+  ['foo\u00ADhttps://example.com', []],
   // The same rule on the other side. A dot and a label character continue the host
   // into a label the ASCII grammar cannot reach, so an internationalized domain is
   // detected only with a scheme.
@@ -709,6 +723,13 @@ const linkCases: [string, [string, string][]][] = [
   // grapheme cluster as well. Written as escapes, a mark being invisible beside its base.
   ['example.com\u0301.org', []],
   ['example.com\u0301', []],
+  // ...and a hyphen IDNA maps into the label: U+FF0D FULLWIDTH HYPHEN-MINUS folds to
+  // "-", so this names example.com-foo. An ASCII hyphen never reaches the test -- LABEL
+  // takes "example.com-foo" whole and its TLD is not one.
+  ['example.com\uFF0Dfoo', []],
+  ['example.com\uFF0D\uFF0Dfoo', []],
+  // ...but a trailing hyphen ends a name rather than continuing it, mapped or not.
+  ['example.com\uFF0D', [['example.com', 'https://example.com']]],
   // A mark inside a path is part of the path: the tail runs to the next whitespace, so it
   // falls inside the match rather than after it.
   [
@@ -831,6 +852,17 @@ const linkCases: [string, [string, string][]][] = [
   [
     '‘https://example.com/a’',
     [['https://example.com/a', 'https://example.com/a']],
+  ],
+  // A wrapper closes at the mark that answers the one that opened it, so the pair this
+  // path carries is counted through rather than cut at.
+  [
+    '«https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne»',
+    [
+      [
+        'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
+        'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
+      ],
+    ],
   ],
   // With nothing to pair against, the same mark is part of the path.
   [
@@ -1003,6 +1035,9 @@ const mentionCases: [string, [string, string][]][] = [
   ['@alice.com.みんな', []],
   ['@alice.coｍ', []],
   ['@alice.co\u00ADm', []],
+  // ...and the same on the other side of the handle: written out this is the email
+  // address foo@alice.com, which the "@" the lead-in excludes would have kept out.
+  ['foo\u00AD@alice.com', []],
   // ...a mark continuing the last label among them: this names alice.coḿ, and the
   // facet would resolve and notify a different account.
   ['@alice.com\u0301.org', []],

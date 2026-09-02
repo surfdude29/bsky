@@ -6,6 +6,7 @@ import { type UnicodeString } from './unicode.js'
 import {
   CASHTAG_REGEX,
   MENTION_REGEX,
+  NAME_CHAR_REGEX,
   TAG_REGEX,
   TRAILING_PUNCTUATION_REGEX,
   URL_REGEX,
@@ -26,8 +27,10 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * other separators onto the second, and IDNA_IGNORED_REGEX drops what cannot separate
  * two labels. The label grammar is greedy, so what follows a match never begins with a
  * real ASCII letter or digit, and the first alternative fires on a character one of those
- * mappings put there, or on a combining mark. "-" is deliberately absent: a trailing
- * hyphen ends a name.
+ * mappings put there, or on a combining mark. The hyphen branch is the same: an ASCII one
+ * is inside LABEL already, so only a mapped hyphen -- "example.com\uFF0Dfoo" is
+ * example.com-foo -- ever reaches it. It reads one only where a label character follows,
+ * a trailing hyphen ending a name rather than continuing it.
  *
  * A mark is in that branch because it attaches to the letter the match just ended on
  * rather than beginning anything after it: "example.com\u0301" is example.coḿ, which is
@@ -40,7 +43,8 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * links nothing. That is the safe direction of the two, and composing the mark onto its
  * base instead would mean reading back past the match.
  */
-const HOST_CONTINUES_REGEX = /^(?:[A-Za-z0-9\p{M}]|\.[\p{L}\p{N}\p{M}])/u
+const HOST_CONTINUES_REGEX =
+  /^(?:[A-Za-z0-9\p{M}]|-+[A-Za-z0-9]|\.[\p{L}\p{N}\p{M}])/u
 
 /** The label separators IDNA accepts besides ".", per UTS 46 and RFC 3490 §3.1. */
 const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
@@ -55,7 +59,7 @@ const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
  */
 const IDNA_IGNORED_REGEX = /\p{Default_Ignorable_Code_Point}/u
 
-/** A separator and a code point, which may be astral: all the test reads. */
+/** A separator -- a dot, or a hyphen or two -- and a code point, which may be astral. */
 const HOST_CONTINUES_SPAN = 3
 
 /**
@@ -101,10 +105,15 @@ const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
  * quotes its path carries. Angle brackets need no entry: the grammar excludes them from
  * a match entirely.
  *
- * Only the unambiguous openers are paired. An ASCII apostrophe is deliberately absent,
- * since it is an apostrophe at least as often as a quote and pairing it would cut
+ * The criterion is an unambiguous *opener*: none of these begins a word, so one sitting
+ * against a URL is quoting it. An ASCII apostrophe fails that test and is deliberately
+ * absent, since it is an apostrophe at least as often as a quote and pairing it would cut
  * 'https://example.com/it's-fine' down to /it. Where one ends a host the authority
  * grammar decides instead, which keeps example.com'dan linking example.com.
+ *
+ * The closers are not held to the same standard, and \u2019 is the cost of that: a path
+ * carrying one inside a ‘...’ wrapper is cut at it. Dropping the pair would put a stray
+ * ’ on the end of every single-quoted URL instead, which is the commoner text of the two.
  */
 const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
   ['"', '"'],
@@ -113,6 +122,26 @@ const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
   ['\u00AB', '\u00BB'],
   ['`', '`'],
 ])
+
+/**
+ * Where the wrapper `opener` opened closes, or -1. A pair the text nests --
+ * «https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne» -- closes at the outer mark, so an
+ * inner opener spends the closer that follows it, the counting trimTrailing does for
+ * brackets. Where the two marks are one character ("..." and `...`) there is nothing to
+ * count and the first closes.
+ */
+function closerAt(text: string, opener: string, closer: string): number {
+  if (opener === closer) return text.indexOf(closer)
+  let depth = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === opener) depth++
+    else if (text[i] === closer) {
+      if (depth === 0) return i
+      depth--
+    }
+  }
+  return -1
+}
 
 function hostContinues(text: string, at: number): boolean {
   // Invisibles are dropped as they are read rather than counted against the span, so any
@@ -129,6 +158,34 @@ function hostContinues(text: string, at: number): boolean {
   return HOST_CONTINUES_REGEX.test(
     after.normalize('NFKC').replace(IDNA_DOT_REGEX, '.'),
   )
+}
+
+/**
+ * Whether prose runs into a match from the left rather than stopping before it. LEAD
+ * admits anything that is not a letter, digit or mark, and an invisible is none of the
+ * three -- but IDNA drops it, so "foo\u00ADexample.com" is the one name fooexample.com,
+ * and linking the example.com inside it would point somewhere else. The mirror of
+ * hostContinues, and it reads the same way: invisibles are dropped as they are read, and
+ * what lies past them decides.
+ *
+ * Only an invisible boundary is questioned, since every other character LEAD admits is
+ * one prose cannot be running through. That is also what leaves a keycap alone: KEYCAP
+ * opens on a digit and carries its variation selector inside, so "a1\uFE0F\u20E3https://..."
+ * is a URL after an emoji, not after the "a".
+ */
+function hostPrecedes(text: string, lead: string, at: number): boolean {
+  if (
+    !lead ||
+    !IDNA_IGNORED_REGEX.test(String.fromCodePoint(lead.codePointAt(0)!))
+  ) {
+    return false
+  }
+  for (let i = at; i > 0;) {
+    const ch = codePointBefore(text, i)
+    i -= ch.length
+    if (!IDNA_IGNORED_REGEX.test(ch)) return NAME_CHAR_REGEX.test(ch)
+  }
+  return false
 }
 
 function countChar(str: string, char: string): number {
@@ -224,6 +281,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const start = text.utf16.indexOf(match[2], match.index)
       const index = { start, end: start + match[2].length }
 
+      // Checked for a schemed match too: "foo\u00ADhttps://example.com" reads as
+      // foohttps://example.com, a URL run against a word exactly as "foohttps://..." is.
+      if (hostPrecedes(text.utf16, match[1], match.index)) {
+        continue
+      }
       if (domain) {
         // Required by the deny-list lead-in of URL_REGEX: a schemeless domain
         // preceded by "-", "_", "." or "/" is part of a longer token, not a URL --
@@ -247,9 +309,10 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       }
 
       let matched = match[2]
-      const closer = WRAPPER_PAIRS.get(match[1][0])
+      const opener = match[1][0]
+      const closer = WRAPPER_PAIRS.get(opener)
       if (closer !== undefined) {
-        const at = matched.indexOf(closer)
+        const at = closerAt(matched, opener, closer)
         if (at !== -1) {
           matched = matched.slice(0, at)
           // The tail ran to the next space, so the closer and everything after it are
@@ -275,7 +338,9 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         },
         features: [
           app.bsky.richtext.facet.link.$build({
-            uri: uri as UriString, // boundary: detected text, format verified by URL_REGEX
+            // boundary: detected text, bounded by URL_REGEX rather than validated by
+            // it -- a schemed authority is a boundary scan, so "https://%" reaches here
+            uri: uri as UriString,
           }),
         ],
       })
@@ -289,6 +354,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       // (https://example.com/@bsky.app), not a mention. MENTION_REGEX's lead-in admits
       // it, and the facet would overlap the link facet the same text produces.
       if (match[1].startsWith('/')) {
+        continue
+      }
+      // "foo\u00AD@alice.com" is the email address foo@alice.com, which the "@" the
+      // lead-in excludes would have kept out had the invisible not stood in for it.
+      if (hostPrecedes(text.utf16, match[1], match.index)) {
         continue
       }
       if (

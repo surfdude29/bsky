@@ -64,7 +64,12 @@ const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
 // without it, and the "#" form costs nothing: TAG_REGEX's guard below refuses both
 // spellings as hashtags.
 const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
-const LEAD = `(^|${KEYCAP}|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)`
+// Named once and exported, since detection.ts asks the same question of the character on
+// the other side of an invisible: what a name is written with is what may not run into a
+// match. rich-text/index.ts re-exports a fixed list, so this stays internal.
+const NAME_CHARS = '\\p{L}\\p{N}\\p{M}'
+export const NAME_CHAR_REGEX = new RegExp(`[${NAME_CHARS}]`, 'u')
+const LEAD = `(^|${KEYCAP}|[^${NAME_CHARS}@#$]\\p{M}*)`
 
 // A handle takes the same lead-in as a URL, so it shares LEAD rather than restating it.
 export const MENTION_REGEX = new RegExp(`${LEAD}(@)([a-zA-Z0-9.-]+)(\\b)`, 'gu')
