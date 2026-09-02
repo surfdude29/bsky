@@ -141,8 +141,8 @@ function countChar(str: string, char: string): number {
 
 /**
  * The code point ending at `end`, as text. `str[end - 1]` is one UTF-16 code unit, which
- * for an astral character is a lone low surrogate -- no property matches one, so
- * Terminal_Punctuation outside the BMP would go untrimmed.
+ * for an astral character is a lone low surrogate -- a code point in its own right, but
+ * not a Terminal_Punctuation one, so a mark outside the BMP would go untrimmed.
  */
 function codePointBefore(str: string, end: number): string {
   const at = end - 2

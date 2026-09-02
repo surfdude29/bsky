@@ -862,8 +862,8 @@ const linkCases: [string, [string, string][]][] = [
   ['example.com/foo！', [['example.com/foo', 'https://example.com/foo']]],
   ['https://example.com؟', [['https://example.com', 'https://example.com']]],
   // ...and it reads code points rather than code units: the last unit of an astral
-  // character is a lone surrogate, which no property matches. U+10A56 is KHAROSHTHI
-  // PUNCTUATION DANDA.
+  // character is a lone surrogate, which Terminal_Punctuation does not match. U+10A56 is
+  // KHAROSHTHI PUNCTUATION DANDA.
   [
     'https://example.com/path\u{10A56}',
     [['https://example.com/path', 'https://example.com/path']],
