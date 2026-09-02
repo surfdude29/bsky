@@ -328,6 +328,7 @@ describe('detectFacets', () => {
         ],
       ],
       ['this #️⃣tag should not be a tag', [], []],
+      ['nor is this #⃣tag, written without the variation selector', [], []],
       [
         'this ##️⃣tag should be a tag',
         ['#️⃣tag'],
@@ -517,5 +518,557 @@ describe('RichText.resolve', () => {
   it('produces no facets for plain text', async () => {
     const rt = await RichText.resolve('just plain text', { resolver })
     expect(rt.facets).toBeUndefined()
+  })
+})
+
+/**
+ * Facets are read from `rt.facets` rather than from `rt.segments()`: segments skip
+ * any facet that starts before the previous one ended, so a detector emitting two
+ * overlapping facets looks correct through that lens while writing both into the
+ * record. See the no-overlap test below.
+ */
+const facetsOf = (text: string) => {
+  const rt = new RichText({ text })
+  rt.detectFacetsWithoutResolution()
+  return (rt.facets ?? []).map((facet) => ({
+    text: rt.unicodeText.slice(facet.index.byteStart, facet.index.byteEnd),
+    index: facet.index,
+    features: facet.features,
+  }))
+}
+
+/** Every link facet as [matched text, uri], so byte offsets are covered too. */
+const links = (text: string): [string, string][] =>
+  facetsOf(text).flatMap((f) =>
+    f.features.filter(isLink).map((l): [string, string] => [f.text, l.uri]),
+  )
+
+/** Every mention facet as [matched text, handle]. */
+const mentions = (text: string): [string, string][] =>
+  facetsOf(text).flatMap((f) =>
+    f.features.filter(isMention).map((m): [string, string] => [f.text, m.did]),
+  )
+
+const linkCases: [string, [string, string][]][] = [
+  // Case folding. The host comparison and the scheme match are both ASCII
+  // case-insensitive.
+  [
+    'HTTPS://EXAMPLE.COM/Path',
+    [['HTTPS://EXAMPLE.COM/Path', 'HTTPS://EXAMPLE.COM/Path']],
+  ],
+  ['visit Example.Com', [['Example.Com', 'https://Example.Com']]],
+  ['BSKY.APP', [['BSKY.APP', 'https://BSKY.APP']]],
+
+  // Hyphens in labels (RFC 1123 §2.1), including punycode A-labels.
+  [
+    'my-site.example.com is up',
+    [['my-site.example.com', 'https://my-site.example.com']],
+  ],
+  ['a--b.com', [['a--b.com', 'https://a--b.com']]],
+  [
+    'xn--80ak6aa92e.com test',
+    [['xn--80ak6aa92e.com', 'https://xn--80ak6aa92e.com']],
+  ],
+  // A punycoded *final* label. The TLD list spells an internationalized TLD as its
+  // U-label ("みんな"), which ASCII text never carries, so the set holds the A-label.
+  [
+    'example.xn--q9jyb4c',
+    [['example.xn--q9jyb4c', 'https://example.xn--q9jyb4c']],
+  ],
+  [
+    'xn--80ak6aa92e.xn--q9jyb4c',
+    [['xn--80ak6aa92e.xn--q9jyb4c', 'https://xn--80ak6aa92e.xn--q9jyb4c']],
+  ],
+  // Still an exact comparison: "xn--" is not a license to invent a TLD.
+  ['example.xn--fake', []],
+  // A link: every label is LDH-conformant and ".com" is a real TLD.
+  ['v1.2-example.com', [['v1.2-example.com', 'https://v1.2-example.com']]],
+  // No leading or trailing hyphen in a label.
+  ['-bad.com', []],
+  ['bad-.com', []],
+
+  // Digit-leading and single-digit first labels, all live sites: 1.org, 404media.co and
+  // 7.zip. What keeps the negatives below plain is the final label, never the first --
+  // 192.com and 192.168.1.1 differ only in their last. "1" and "99" are absent from the
+  // TLD set because RFC 1123 §2.1, restated in RFC 3696 §2, rules out an all-numeric
+  // TLD; "30am" is simply not a TLD.
+  ['1.org', [['1.org', 'https://1.org']]],
+  ['404media.co', [['404media.co', 'https://404media.co']]],
+  ['192.com', [['192.com', 'https://192.com']]],
+  ['short link 7.zip/AbC123 here', [['7.zip/AbC123', 'https://7.zip/AbC123']]],
+  ['ping 192.168.1.1 now', []],
+  ['meet at 12.30am tomorrow', []],
+  ['it costs 4.99 total', []],
+  ['See Section 4. In the box.', []],
+
+  // Run-on: a bare domain is dot-separated LDH labels, an optional port and a tail that
+  // opens at "/", "?" or "#", so prose running straight on falls outside the match. A
+  // schemed URL is not bound this way: a comma is a sub-delim, legal in a reg-name, so
+  // https://example.com,then is a single match.
+  ['go to example.com,then click', [['example.com', 'https://example.com']]],
+  ['see example.com* for more', [['example.com', 'https://example.com']]],
+  ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
+
+  // Excess trailing closers are stripped, rather than every bracket regardless. An
+  // unmatched opener inside the match is left alone -- the trim only ever shortens.
+  [
+    'nested (example.com/a(b)) done',
+    [['example.com/a(b)', 'https://example.com/a(b)']],
+  ],
+  ['[example.com/x] bracketed', [['example.com/x', 'https://example.com/x']]],
+  ['quote "example.com" end', [['example.com', 'https://example.com']]],
+  [
+    'except for https://foo.com/thing_(cool)',
+    [['https://foo.com/thing_(cool)', 'https://foo.com/thing_(cool)']],
+  ],
+
+  // Method calls. ".now", ".map" and ".next" are all real TLDs, so the host grammar
+  // alone would match these. Heuristic: a bare domain followed by "(" is not a URL.
+  ['performance.now() is fast', []],
+  ['array.map(fn) works', []],
+  ['router.next() called', []],
+  // The heuristic is scoped to schemeless matches.
+  [
+    'https://example.com(x)',
+    [['https://example.com(x)', 'https://example.com(x)']],
+  ],
+
+  // Port and fragment stay inside the match.
+  [
+    'example.com:8080/health',
+    [['example.com:8080/health', 'https://example.com:8080/health']],
+  ],
+  [
+    'example.com#section',
+    [['example.com#section', 'https://example.com#section']],
+  ],
+  [
+    'http://localhost:3000/api',
+    [['http://localhost:3000/api', 'http://localhost:3000/api']],
+  ],
+
+  // Lead-in is a deny-list, so anything that is not alphanumeric, "@", "#" or "$"
+  // may precede a link -- emoji and arrows included, which no allow-list covers.
+  [
+    '\u{1F517}https://example.com/',
+    [['https://example.com/', 'https://example.com/']],
+  ],
+  ['\u{1F517}example.com', [['example.com', 'https://example.com']]],
+  // A keycap is the one emoji family the deny-list cannot express on its own: the base
+  // is a digit (or "#"), which the lead-in excludes, and the rest is combining marks.
+  // TAG_REGEX already refuses "#\uFE0F\u20E3" as a tag, so there is no contest.
+  [
+    '1\uFE0F\u20E3https://example.com',
+    [['https://example.com', 'https://example.com']],
+  ],
+  ['emoji\u{1F389}bsky.app here', [['bsky.app', 'https://bsky.app']]],
+  ['→https://example.com', [['https://example.com', 'https://example.com']]],
+  // A combining mark is not a boundary in its own right, but it may follow one:
+  // the variation selector belongs to the emoji, not to the URL.
+  ['⚠️example.com', [['example.com', 'https://example.com']]],
+  // The lead-in boundary is Unicode, not ASCII. With an ASCII-only boundary an
+  // accented or non-Latin letter reads as a separator, so the tail of a word
+  // becomes a domain in its own right.
+  ['naïve.com', []],
+  ['señor.org here', []],
+  ['мой сайт.com', []],
+  // A letter directly before a URL suppresses detection in every script. CJK is
+  // written without spaces, so a URL run straight against it is not detected.
+  ['日本語bsky.app', []],
+  // The same rule on the other side. A dot and a label character continue the host
+  // into a label the ASCII grammar cannot reach, so an internationalized domain is
+  // detected only with a scheme.
+  ['example.com.みんな', []],
+  ['example.com.みんな/path', []],
+  // The same rule reaching inside a label rather than across a dot: UTS 46 maps the
+  // fullwidth "ｍ" into it, so this names example.com and not the example.co inside it.
+  ['example.coｍ', []],
+  // ...and the separators and invisibles IDNA folds into a name reach it the same way.
+  ['example.com\u3002みんな', []],
+  ['example.com\uFF61みんな', []],
+  ['example.co\u00ADm', []],
+  ['example.co\u034Fm', []],
+  // ...however many of them, and on either side of a separator: they are dropped as the
+  // text is read rather than measured against a window a run could walk past.
+  [`example.co${'\u00AD'.repeat(6)}m`, []],
+  [`example.com\u3002${'\u00AD'.repeat(6)}みんな`, []],
+  // Dropped rather than treated as a stop, since what follows one is what says whether
+  // the host carries on. Here that is a space, the shape right-to-left prose produces.
+  ['example.com\u200F next', [['example.com', 'https://example.com']]],
+  [
+    'https://example.com.みんな',
+    [['https://example.com.みんな', 'https://example.com.みんな']],
+  ],
+  // Without a dot the host is complete and what follows is prose. CJK is written
+  // without spaces, so this is the common shape rather than a curiosity.
+  ['bsky.appを見て', [['bsky.app', 'https://bsky.app']]],
+  ['example.com。', [['example.com', 'https://example.com']]],
+
+  // An over-long port fails the whole port group rather than matching a
+  // five-digit prefix of it.
+  ['example.com:123456/path', [['example.com', 'https://example.com']]],
+  [
+    'example.com:99999/ok',
+    [['example.com:99999/ok', 'https://example.com:99999/ok']],
+  ],
+
+  // A trailing "@" closes a userinfo and leaves the host empty, and angle brackets are
+  // RFC 3986 Appendix C delimiters, so neither belongs to the URL.
+  ['https://example.com@', [['https://example.com', 'https://example.com']]],
+  ['<https://example.com>', [['https://example.com', 'https://example.com']]],
+  // ...and the closing bracket is not absorbed when prose runs straight on from it.
+  // Angle brackets are outside the match grammar, so this holds with a path too.
+  [
+    '<https://example.com>following',
+    [['https://example.com', 'https://example.com']],
+  ],
+  [
+    '<https://example.com/path>following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  // Each wrapper WRAPPER_PAIRS lists, closed with prose running straight on. The closer
+  // belongs to the sentence, not to the URL. LEAD admits "(", "[" and "{" as openers too,
+  // but bounding a path is out of scope, so only these are paired.
+  [
+    '"https://example.com/path"following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\u201Chttps://example.com/path\u201Dfollowing',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\u00ABhttps://example.com\u00BBfollowing',
+    [['https://example.com', 'https://example.com']],
+  ],
+  [
+    '`https://example.com`following',
+    [['https://example.com', 'https://example.com']],
+  ],
+  // The tail ran past the closer, so what follows it is still unread text rather than
+  // part of the match: both of these are links.
+  [
+    '"https://one.com/path"https://two.com',
+    [
+      ['https://one.com/path', 'https://one.com/path'],
+      ['https://two.com', 'https://two.com'],
+    ],
+  ],
+  // A quote nothing opened is path content. These are real pages, which MediaWiki serves
+  // without percent-encoding, so banning the character outright would point them at
+  // /wiki/.
+  [
+    'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+    [
+      [
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+      ],
+    ],
+  ],
+  // The rule belongs to the tail, so a schemeless host reaches it the same way.
+  [
+    'en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+    [
+      [
+        'en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+      ],
+    ],
+  ],
+  // Guillemets likewise, and a closer mid-path does not end the URL either.
+  [
+    'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
+    [
+      [
+        'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
+        'https://fr.wikipedia.org/wiki/«_A_»_de_Charlemagne',
+      ],
+    ],
+  ],
+  // ...but RFC 3986 §3.3 puts "@" in pchar, so it is legal in a path, a query and a
+  // fragment, and must survive there.
+  [
+    'https://example.com/path@',
+    [['https://example.com/path@', 'https://example.com/path@']],
+  ],
+  [
+    'https://example.com/?q=@',
+    [['https://example.com/?q=@', 'https://example.com/?q=@']],
+  ],
+  [
+    'https://example.com/#@',
+    [['https://example.com/#@', 'https://example.com/#@']],
+  ],
+  // "'" and "*" are sub-delims, so they are legal in a path for the same reason and
+  // are kept there -- but they still end an authority.
+  [
+    "https://example.com/foo'",
+    [["https://example.com/foo'", "https://example.com/foo'"]],
+  ],
+  [
+    'https://example.com/glob/*',
+    [['https://example.com/glob/*', 'https://example.com/glob/*']],
+  ],
+  ['https://example.com*', [['https://example.com', 'https://example.com']]],
+  // A quoted URL ends at the quote that opened it, whichever pair was used.
+  [
+    '“https://example.com/foo”',
+    [['https://example.com/foo', 'https://example.com/foo']],
+  ],
+  [
+    '‘https://example.com/a’',
+    [['https://example.com/a', 'https://example.com/a']],
+  ],
+  // With nothing to pair against, the same mark is part of the path.
+  [
+    'https://example.com/a’',
+    [['https://example.com/a’', 'https://example.com/a’']],
+  ],
+  // Sentence punctuation is trimmed regardless, having no opener to pair with. That
+  // holds after a path too, which is the trim's known limit.
+  [
+    'see https://example.com/foo… ok',
+    [['https://example.com/foo', 'https://example.com/foo']],
+  ],
+  [
+    'Here: https://example.com/article.',
+    [['https://example.com/article', 'https://example.com/article']],
+  ],
+  [
+    'check out https://example.com/foo!',
+    [['https://example.com/foo', 'https://example.com/foo']],
+  ],
+  // Which component the "@" sits in is decided per "@", not once per URL: stripping
+  // the trailing "?" moves it into the authority in the first two and leaves it in
+  // the path in the third.
+  ['https://example.com@?', [['https://example.com', 'https://example.com']]],
+  ['https://example.com@??', [['https://example.com', 'https://example.com']]],
+  [
+    'https://example.com/path@?',
+    [['https://example.com/path@', 'https://example.com/path@']],
+  ],
+
+  // The host grammar is ASCII by construction, not by an `i` flag: under Unicode
+  // case-folding /[a-z]/iu also matches U+017F and U+212A, which would admit these
+  // to a grammar documented as ASCII-LDH -- and the third is not even a scheme.
+  // Written as escapes because they are visually indistinguishable from ASCII.
+  ['\u017F.com', []],
+  ['\u212A.com', []],
+  ['http\u017F://example.com', []],
+
+  // ...and what the excluded set plus the schemeless guard keep out.
+  ['path/to/site.com here', []],
+  ['trailing_example.com', []],
+  ['foo@example.com is my email', []],
+  ['#example.com tag', []],
+  ['$AAPL example.com', [['example.com', 'https://example.com']]],
+]
+
+const schemedCases: [string, [string, string][]][] = [
+  [
+    'https://münchen.de/straße',
+    [['https://münchen.de/straße', 'https://münchen.de/straße']],
+  ],
+  [
+    'see https://例え.jp/foo here',
+    [['https://例え.jp/foo', 'https://例え.jp/foo']],
+  ],
+  [
+    'https://[::1]:8080/api',
+    [['https://[::1]:8080/api', 'https://[::1]:8080/api']],
+  ],
+  [
+    'https://ru.wikipedia.org/wiki/Кошка',
+    [
+      [
+        'https://ru.wikipedia.org/wiki/Кошка',
+        'https://ru.wikipedia.org/wiki/Кошка',
+      ],
+    ],
+  ],
+  [
+    'https://user@example.com/x',
+    [['https://user@example.com/x', 'https://user@example.com/x']],
+  ],
+  // An apostrophe ends the authority only when it is a suffix. Followed by an
+  // "@" in the same authority it is userinfo, and truncating there would emit a
+  // broken "https://o".
+  [
+    "https://o'reilly@example.com/",
+    [["https://o'reilly@example.com/", "https://o'reilly@example.com/"]],
+  ],
+  // Length does not enter into it: userinfo is part of the authority grammar, not a
+  // decision taken per apostrophe within a window.
+  [
+    `https://o'${'a'.repeat(256)}@example.com/`,
+    [
+      [
+        `https://o'${'a'.repeat(256)}@example.com/`,
+        `https://o'${'a'.repeat(256)}@example.com/`,
+      ],
+    ],
+  ],
+  // ...and only when that "@" is inside the authority. A quote is a hard stop, so the
+  // userinfo run cannot reach that "@" and there is none: the host ends at the
+  // apostrophe, exactly as "https://example.com'dan" does.
+  ['https://o\'reilly"@example.com', [['https://o', 'https://o']]],
+  // A match that trims down to nothing but its scheme is not a link.
+  ['https://,,,', []],
+  ['(https://)', []],
+]
+
+const apostropheCases: [string, [string, string][]][] = [
+  ["example.com'dan", [['example.com', 'https://example.com']]],
+  ['example.com’dan', [['example.com', 'https://example.com']]],
+  ["https://example.com'dan", [['https://example.com', 'https://example.com']]],
+  ['https://example.com’dan', [['https://example.com', 'https://example.com']]],
+  ["bsky.app'de yayınlandı", [['bsky.app', 'https://bsky.app']]],
+  [
+    "example.com'dan bsky.app'e",
+    [
+      ['example.com', 'https://example.com'],
+      ['bsky.app', 'https://bsky.app'],
+    ],
+  ],
+  ["GitHub.com'a git", [['GitHub.com', 'https://GitHub.com']]],
+  // Only the authority stops at an apostrophe; it stays legal in a path.
+  [
+    "https://example.com/it's-fine",
+    [["https://example.com/it's-fine", "https://example.com/it's-fine"]],
+  ],
+]
+
+const mentionCases: [string, [string, string][]][] = [
+  // social-app issue 7341: a handle after an apostrophe.
+  ['l’@bsky.app a dit', [['@bsky.app', 'bsky.app']]],
+  ["l'@atproto.com", [['@atproto.com', 'atproto.com']]],
+  // The Twitter-style leading ".@" is a mention too.
+  ['.@bsky.app hi', [['@bsky.app', 'bsky.app']]],
+  ['\u{1F517}@bsky.app hi', [['@bsky.app', 'bsky.app']]],
+  // Non-regressions.
+  ['1\uFE0F\u20E3@bsky.app', [['@bsky.app', 'bsky.app']]],
+  ['not@right', []],
+  ['@handle.com!@#$chars', [['@handle.com', 'handle.com']]],
+  // A handle in a URL is part of the URL, not a mention -- these would otherwise
+  // overlap the link facet the same text produces. segments() hides an overlap,
+  // so these assert through rt.facets; see the no-overlap test below.
+  ['https://example.com/@bsky.app', []],
+  ['https://example.com/?q=@bsky.app', []],
+  ['https://example.com/foo-@bsky.app', []],
+  // An internationalized email address is not a mention. With an ASCII-only
+  // lead-in the accented letter reads as a boundary and @example.com matches.
+  ['josé@example.com', []],
+  ['josé@example.com'.normalize('NFD'), []],
+  ['мария@example.com', []],
+  // An internationalized handle can only be written as an A-label: @atproto/syntax
+  // admits [a-zA-Z0-9.-] alone.
+  ['@alice.xn--q9jyb4c hi', [['@alice.xn--q9jyb4c', 'alice.xn--q9jyb4c']]],
+  // ...and only that spelling: a handle is ASCII, so a name that carries on past what
+  // that grammar can see is not one.
+  ['@alice.com.みんな', []],
+  ['@alice.coｍ', []],
+  ['@alice.co\u00ADm', []],
+  // The ".test" suffix folds case, like every other TLD comparison.
+  ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
+]
+
+const nestedCases: [string, [string, string][]][] = [
+  [
+    'https://example.com/($AAPL)',
+    [['https://example.com/($AAPL)', 'https://example.com/($AAPL)']],
+  ],
+  [
+    'see https://example.com/($BTC) ok',
+    [['https://example.com/($BTC)', 'https://example.com/($BTC)']],
+  ],
+  [
+    'https://example.com/?q=@bsky.app',
+    [['https://example.com/?q=@bsky.app', 'https://example.com/?q=@bsky.app']],
+  ],
+]
+
+describe('detectFacets link detection', () => {
+  const cases = linkCases
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets does not truncate schemed URLs', () => {
+  // The host of a schemed URL is deliberately not held to the ASCII LDH grammar
+  // used for bare domains: an ASCII-only host class would cut IDN hosts down to
+  // their first label and drop IPv6 literals entirely.
+  const cases = schemedCases
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets does not swallow apostrophe suffixes', () => {
+  // social-app issue 8164: "example.com'dan" is Turkish for "from example.com". The
+  // suffix belongs to the sentence, not to the host.
+  const cases = apostropheCases
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets mention detection', () => {
+  const cases = mentionCases
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(mentions(input)).toEqual(expected)
+  })
+})
+
+describe('detectFacets does not nest facets inside a link', () => {
+  // The link pass runs first and wins: a handle or a cashtag written inside a URL is
+  // part of that URL. Cashtags are the easy one to miss -- CASHTAG_REGEX's lead-in
+  // includes "(", so it fires inside a path that the URL itself contains.
+  const cases = nestedCases
+
+  it.each(cases)('%s', (input, expected) => {
+    expect(links(input)).toEqual(expected)
+    // and nothing else at all -- no nested tag or mention facet alongside the link
+    expect(facetsOf(input)).toHaveLength(1)
+  })
+})
+
+describe('detectFacets never emits overlapping facets', () => {
+  // Facet ranges are written into the record, and a consumer that walks them in order
+  // (as segments() does) silently drops the second of any two that overlap, so an
+  // overlap corrupts the record while staying invisible from segments().
+  //
+  // The corpus is every case the five tables above declare, so each is checked for
+  // overlap automatically -- the older block at the top of the file is not. Only
+  // combinations that no single table exercises are added explicitly.
+  const inputs = [
+    ...linkCases.map(([input]) => input),
+    ...schemedCases.map(([input]) => input),
+    ...apostropheCases.map(([input]) => input),
+    ...mentionCases.map(([input]) => input),
+    ...nestedCases.map(([input]) => input),
+    'https://example.com/($AAPL)',
+    'https://example.com/#tag $USD',
+    'hey @alice.test check bsky.app #tag $BTC',
+    'https://example.com/@a.com @b.com #c $D',
+    '@handle.com!@#$chars',
+    '#example.com tag',
+    '$AAPL example.com',
+  ]
+
+  it.each(inputs)('%s', (input) => {
+    const rt = new RichText({ text: input })
+    rt.detectFacetsWithoutResolution()
+    const ranges = (rt.facets ?? [])
+      .map((f) => f.index)
+      .sort((a, b) => a.byteStart - b.byteStart)
+    for (let i = 1; i < ranges.length; i++) {
+      expect(ranges[i].byteStart).toBeGreaterThanOrEqual(ranges[i - 1].byteEnd)
+    }
   })
 })

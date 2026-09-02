@@ -1,15 +1,97 @@
-export const MENTION_REGEX = /(^|\s|\()(@)([a-zA-Z0-9.-]+)(\b)/g
-export const URL_REGEX =
-  /(^|\s|\()((https?:\/\/[\S]+)|((?<domain>[a-z][a-z0-9]*(\.[a-z0-9]+)+)[\S]*))/gim
+// LDH label per RFC 1035 §2.3.1 as amended by RFC 1123 §2.1: letters, digits and
+// hyphens, no leading or trailing hyphen. The §2.3.4 length limits are not enforced --
+// detection finds links in prose, it does not validate names. `-+` admits the double
+// hyphen of a punycode A-label (xn--80ak6aa92e), and this shape leaves the engine no
+// ambiguous split to explore, so a failure costs one pass instead of many.
+//
+// Both cases are spelled out instead of an `i` flag: with `u` also set, Unicode
+// case-folding makes [a-z] match U+017F and U+212A, admitting "ſ.com" and "httpſ://"
+// to a grammar documented as ASCII.
+const LABEL = '[A-Za-z0-9]+(?:-+[A-Za-z0-9]+)*'
+
+// Spelled out for the same reason as LABEL.
+const SCHEME = '[Hh][Tt][Tt][Pp][Ss]?'
+
+// RFC 3986 §3.2: the authority ends at "/", "?", "#" or end of input, and the port is
+// inside it. Five digits covers every real port -- the RFC itself says `port = *DIGIT`
+// -- and (?!\d) makes a longer run fail the group outright instead of matching a
+// prefix, so "example.com:123456/path" is not "example.com:12345".
+const PORT = '(?::\\d{1,5}(?!\\d))?'
+
+// The tail runs to the next whitespace, excluding angle brackets alone: RFC 3986
+// Appendix C wraps a URI in them precisely because they cannot occur inside one. Quotes
+// can occur -- https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic is a real page -- so
+// what closes a quoted URL is decided in detectFacets, from the wrapper that opened it.
+const TAIL = '(?:[/?#][^\\s<>]*)?'
+
+// A schemed URL's authority in the shape RFC 3986 §3.2 gives it: an optional userinfo
+// ending in "@", then a host. Neither is held to the LDH grammar above, which would
+// truncate IDN hosts ("https://münchen.de" -> "https://m") and drop IPv6 literals
+// ("https://[::1]:8080"). Both end at the §3.2 delimiters and at the wrappers prose puts
+// around a URL.
+//
+// Only the host also ends at an apostrophe, which keeps Turkish suffixation out of it:
+// "https://example.com'dan" links to example.com. That is practical rather than
+// normative -- RFC 3986 §2.2 makes "'" a sub-delim, legal in a host as in a path -- so
+// "'" and "’" are excluded from the host class, not from AUTHORITY_STOP, leaving
+// userinfo free to carry them ("https://o'reilly@example.com"). Splitting the two also
+// confines the "@" to the authority: the userinfo run ends where the authority does, so
+// in "https://o'reilly\"@example.com" the quote stops it, there is no userinfo, and the
+// host ends at the apostrophe. With no "@" ahead of it the run gives back a character at
+// a time, linear in what it scanned.
+const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>'
+const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
+
+// What may precede a URL or a handle: anything that is not a letter, a digit or a
+// combining mark, and not "@", "#" or "$". A deny-list rather than an allow-list, so
+// quotes, brackets, apostrophes, arrows and emoji all work without being enumerated.
+// Each exclusion earns its place: letters and digits stop a URL being found part-way
+// through a word, "@" keeps "foo@example.com" out, "#" keeps "#example.com" from
+// overlapping its hashtag facet, and "$" keeps cashtags clear. "-", "_", "." and "/"
+// are *not* excluded here; detectFacets rejects those separately for schemeless
+// matches, which keeps "trailing_example.com" and "path/to/site.com" out.
+//
+// The classes are Unicode, which needs the `u` flag below. An ASCII-only boundary
+// treats any accented or non-Latin letter as a separator, making "josé@example.com" a
+// mention of @example.com and "naïve.com" a link to ve.com. Marks are excluded for the
+// same reason, NFD spelling "josé" as "jose" + U+0301, but one may still *follow* the
+// boundary character, so "⚠️example.com" works. The cost is that a URL run straight
+// against letters, as CJK is, is not found.
+//
+// Keycaps are the one emoji family the deny-list cannot express, so they are enumerated:
+// "1️⃣" is a digit, a variation selector and U+20E3 -- a base the list excludes, followed
+// by marks. The variation selector is optional, since older text writes the sequence
+// without it, and the "#" form costs nothing: TAG_REGEX's guard below refuses both
+// spellings as hashtags.
+const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
+const LEAD = `(^|${KEYCAP}|[^\\p{L}\\p{N}\\p{M}@#$]\\p{M}*)`
+
+// A handle takes the same lead-in as a URL, so it shares LEAD rather than restating it.
+export const MENTION_REGEX = new RegExp(`${LEAD}(@)([a-zA-Z0-9.-]+)(\\b)`, 'gu')
+// The branch alternatives capture, so the numbered groups carry: 1 the lead-in, either
+// a keycap sequence or a boundary character with any combining marks that follow it;
+// 2 the whole URL; 3 schemed URL; 4 bare domain with tail; 5 host; 6 its last
+// dot-label. detectFacets uses only 1, 2 and `groups.domain`, but the rest are part of
+// the exported regex's contract.
+export const URL_REGEX = new RegExp(
+  LEAD +
+    '(' +
+    `(${SCHEME}:\\/\\/${AUTHORITY}${TAIL})` +
+    '|' +
+    `((?<domain>${LABEL}(\\.${LABEL})+)${PORT}${TAIL})` +
+    ')',
+  'gmu',
+)
 export const TRAILING_PUNCTUATION_REGEX = /\p{P}+$/gu
 
 /**
- * `\ufe0f` emoji modifier
+ * `\ufe0f` emoji modifier, `\u20e3` combining enclosing keycap: a "#" carrying either
+ * opens the keycap emoji KEYCAP admits above, not a hashtag.
  * `\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2` zero-width spaces (likely incomplete)
  */
 export const TAG_REGEX =
   // eslint-disable-next-line no-misleading-character-class
-  /(^|\s)[#＃]((?!\ufe0f)[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*[^\d\s\p{P}\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]+[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*)?/gu
+  /(^|\s)[#＃]((?![\ufe0f\u20e3])[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*[^\d\s\p{P}\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]+[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*)?/gu
 
 export const CASHTAG_REGEX =
   /(^|\s|\()\$([A-Za-z][A-Za-z0-9]{0,4})(?=\s|$|[.,;:!?)"'\u2019])/gu
