@@ -1,7 +1,12 @@
 import type { AtprotoDid, HandleResolver } from '@atproto-labs/handle-resolver'
 import { describe, expect, it } from 'vitest'
 import { app } from '../src/lexicons/index.js'
-import { RichText, RichTextSegment } from '../src/rich-text/index.js'
+import {
+  MENTION_REGEX,
+  RichText,
+  RichTextSegment,
+  URL_REGEX,
+} from '../src/rich-text/index.js'
 import { is$typedObject } from '../src/utils/types.js'
 
 const isLink = <T extends Record<string, unknown>>(f: T) =>
@@ -616,6 +621,10 @@ const linkCases: [string, [string, string][]][] = [
     [['example.com/a(b)', 'https://example.com/a(b)']],
   ],
   ['[example.com/x] bracketed', [['example.com/x', 'https://example.com/x']]],
+  [
+    'example.com/a{b}} done',
+    [['example.com/a{b}', 'https://example.com/a{b}']],
+  ],
   ['quote "example.com" end', [['example.com', 'https://example.com']]],
   [
     'except for https://foo.com/thing_(cool)',
@@ -661,6 +670,11 @@ const linkCases: [string, [string, string][]][] = [
     '1\uFE0F\u20E3https://example.com',
     [['https://example.com', 'https://example.com']],
   ],
+  // ...on each base KEYCAP admits, not the digit alone. The "#" spelling is the one to
+  // watch: it is a keycap emoji rather than a hashtag, so the link stands and TAG_REGEX's
+  // guard leaves no tag facet to contend with.
+  ['#\uFE0F\u20E3example.com', [['example.com', 'https://example.com']]],
+  ['*\u20E3example.com', [['example.com', 'https://example.com']]],
   ['emoji\u{1F389}bsky.app here', [['bsky.app', 'https://bsky.app']]],
   ['→https://example.com', [['https://example.com', 'https://example.com']]],
   // A combining mark is not a boundary in its own right, but it may follow one:
@@ -972,6 +986,17 @@ const linkCases: [string, [string, string][]][] = [
     'see https://example.com/foo… ok',
     [['https://example.com/foo', 'https://example.com/foo']],
   ],
+  // ...including the en and em dashes, which the strip enumerates beside the ellipsis
+  // rather than reading from Terminal_Punctuation. Schemed, since a dash after a bare
+  // domain falls outside the match and never reaches the trim.
+  [
+    'https://example.com\u2013',
+    [['https://example.com', 'https://example.com']],
+  ],
+  [
+    'https://example.com\u2014',
+    [['https://example.com', 'https://example.com']],
+  ],
   [
     'Here: https://example.com/article.',
     [['https://example.com/article', 'https://example.com/article']],
@@ -1112,6 +1137,10 @@ const mentionCases: [string, [string, string][]][] = [
   // Non-regressions.
   ['1\uFE0F\u20E3@bsky.app', [['@bsky.app', 'bsky.app']]],
   ['not@right', []],
+  // A handle needs a dot and a known TLD, or the ".test" suffix: neither of these is a
+  // candidate, and the first is the shape ordinary prose produces.
+  ['@alice', []],
+  ['@alice.invalid', []],
   ['@handle.com!@#$chars', [['@handle.com', 'handle.com']]],
   // A handle in a URL is part of the URL, not a mention -- these would otherwise
   // overlap the link facet the same text produces. segments() hides an overlap,
@@ -1170,6 +1199,73 @@ const nestedCases: [string, [string, string][]][] = [
     [['https://example.com/?q=@bsky.app', 'https://example.com/?q=@bsky.app']],
   ],
 ]
+
+describe('the exported regexes keep their documented contract', () => {
+  // detectFacets reads groups 1, 2 and `domain` alone, so a shift in 3 to 6 would leave
+  // every case above green while breaking a consumer that reads them positionally --
+  // which util.ts documents that they may. Both regexes carry `g`, so lastIndex is put
+  // back afterwards: exec leaves it where the match ended, and detection shares these
+  // very instances.
+  const exec = (re: RegExp, text: string) => {
+    re.lastIndex = 0
+    try {
+      return re.exec(text)
+    } finally {
+      re.lastIndex = 0
+    }
+  }
+
+  it('URL_REGEX numbers the schemed branch', () => {
+    const match = exec(URL_REGEX, 'see https://a.example.com:8080/p?q#f end')
+    const url = 'https://a.example.com:8080/p?q#f'
+    expect(match?.slice(0, 7)).toEqual([
+      ' ' + url, // 0 the whole match, lead-in included
+      ' ', // 1 the lead-in
+      url, // 2 the URL
+      url, // 3 the schemed branch
+      undefined, // 4 the bare-domain branch
+      undefined, // 5 its host
+      undefined, // 6 its last dot-label
+    ])
+    expect(match?.groups?.domain).toBeUndefined()
+  })
+
+  it('URL_REGEX numbers the bare-domain branch', () => {
+    const match = exec(URL_REGEX, 'see my-site.example.com:8080/p end')
+    const url = 'my-site.example.com:8080/p'
+    expect(match?.slice(0, 7)).toEqual([
+      ' ' + url,
+      ' ',
+      url,
+      undefined,
+      url,
+      'my-site.example.com',
+      '.com',
+    ])
+    expect(match?.groups?.domain).toBe('my-site.example.com')
+  })
+
+  it('MENTION_REGEX numbers the lead-in, the sigil and the handle', () => {
+    const match = exec(MENTION_REGEX, 'hi @alice.example.com!')
+    expect(match?.slice(0, 5)).toEqual([
+      ' @alice.example.com',
+      ' ', // 1 the lead-in
+      '@', // 2 the sigil
+      'alice.example.com', // 3 the handle
+      '', // 4 the word boundary it ends at
+    ])
+  })
+
+  it('carries the flags the grammar depends on', () => {
+    // `u` is what makes the classes Unicode; `i` is deliberately absent, since with `u`
+    // case-folding admits U+017F and U+212A to a grammar documented as ASCII.
+    expect(URL_REGEX.unicode).toBe(true)
+    expect(URL_REGEX.ignoreCase).toBe(false)
+    expect(URL_REGEX.multiline).toBe(true)
+    expect(MENTION_REGEX.unicode).toBe(true)
+    expect(MENTION_REGEX.ignoreCase).toBe(false)
+  })
+})
 
 describe('detectFacets link detection', () => {
   const cases = linkCases
@@ -1239,19 +1335,23 @@ describe('detectFacets never emits overlapping facets', () => {
   // The corpus is every case the five tables above declare, so each is checked for
   // overlap automatically -- the older block at the top of the file is not. Only
   // combinations that no single table exercises are added explicitly.
+  // Wrapped in a Set: the explicit combinations below repeat inputs the tables already
+  // contribute, and a duplicate proves nothing twice.
   const inputs = [
-    ...linkCases.map(([input]) => input),
-    ...schemedCases.map(([input]) => input),
-    ...apostropheCases.map(([input]) => input),
-    ...mentionCases.map(([input]) => input),
-    ...nestedCases.map(([input]) => input),
-    'https://example.com/($AAPL)',
-    'https://example.com/#tag $USD',
-    'hey @alice.test check bsky.app #tag $BTC',
-    'https://example.com/@a.com @b.com #c $D',
-    '@handle.com!@#$chars',
-    '#example.com tag',
-    '$AAPL example.com',
+    ...new Set([
+      ...linkCases.map(([input]) => input),
+      ...schemedCases.map(([input]) => input),
+      ...apostropheCases.map(([input]) => input),
+      ...mentionCases.map(([input]) => input),
+      ...nestedCases.map(([input]) => input),
+      'https://example.com/($AAPL)',
+      'https://example.com/#tag $USD',
+      'hey @alice.test check bsky.app #tag $BTC',
+      'https://example.com/@a.com @b.com #c $D',
+      '@handle.com!@#$chars',
+      '#example.com tag',
+      '$AAPL example.com',
+    ]),
   ]
 
   it.each(inputs)('%s', (input) => {
