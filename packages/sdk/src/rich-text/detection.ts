@@ -25,8 +25,8 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * Tested against text put through the IDNA mappings that decide where a label ends:
  * NFKC folds the compatibility forms -- fullwidth, roman-numeral and mathematical
  * letters alike -- onto the first alternative, IDNA_DOT_REGEX folds the other separators
- * onto the second, and IDNA_IGNORED_REGEX removes what neither side of a label can be
- * separated by. The text after a match never begins with a real ASCII letter or digit,
+ * onto the second, and IDNA_IGNORED_REGEX names what is dropped, neither side of a label
+ * being separable by one. The text after a match never begins with a real ASCII letter or digit,
  * the label grammar being greedy, so the first alternative fires only on a character one
  * of those mappings put there. "-" is deliberately absent: a trailing hyphen ends a name
  * rather than continuing it.
@@ -41,14 +41,17 @@ const HOST_CONTINUES_REGEX = /^(?:[A-Za-z0-9]|\.[\p{L}\p{N}\p{M}])/u
 const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
 
 /**
- * Invisible characters IDNA drops or refuses. Either way they cannot hold two labels
- * apart, so what reads as one name is one name: "example.co\u00ADm" renders as
- * example.com, and linking the example.co inside it would point somewhere else.
+ * Invisible characters IDNA drops from a name or refuses it for. Either way they cannot
+ * hold two labels apart, so what reads as one name is one name: "example.co\u00ADm"
+ * renders as example.com, and linking the example.co inside it would point somewhere else.
+ * The property is tested rather than a list, an omission from a list being a way past the
+ * test. It is wider than the set UTS 46 ignores, adding characters that are disallowed in
+ * a name instead -- either way the name is not one, and the answer here is the same.
  */
-const IDNA_IGNORED_REGEX = /[\u00AD\u200B-\u200D\u2060\uFEFF]/g
+const IDNA_IGNORED_REGEX = /\p{Default_Ignorable_Code_Point}/u
 
-/** A separator, a couple of invisibles and an astral code point: all the test reads. */
-const HOST_CONTINUES_SPAN = 6
+/** A separator and a code point, which may be astral: all the test reads. */
+const HOST_CONTINUES_SPAN = 3
 
 /**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are
@@ -95,12 +98,20 @@ const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
 ])
 
 function hostContinues(text: string, at: number): boolean {
-  const after = text
-    .slice(at, at + HOST_CONTINUES_SPAN)
-    .normalize('NFKC')
-    .replace(IDNA_IGNORED_REGEX, '')
-    .replace(IDNA_DOT_REGEX, '.')
-  return HOST_CONTINUES_REGEX.test(after)
+  // Invisibles are dropped as they are read rather than counted against the span, so any
+  // number of them read as none, on either side of a separator. Matches do not overlap,
+  // so each run is read once. An invisible is not itself evidence that the host carries
+  // on -- what follows it is -- which is what keeps right-to-left prose working, where
+  // "example.com\u200F " is a host, a right-to-left mark and then a space.
+  let after = ''
+  for (let i = at; i < text.length && after.length < HOST_CONTINUES_SPAN;) {
+    const ch = String.fromCodePoint(text.codePointAt(i)!)
+    i += ch.length
+    if (!IDNA_IGNORED_REGEX.test(ch)) after += ch
+  }
+  return HOST_CONTINUES_REGEX.test(
+    after.normalize('NFKC').replace(IDNA_DOT_REGEX, '.'),
+  )
 }
 
 function countChar(str: string, char: string): number {

@@ -687,6 +687,14 @@ const linkCases: [string, [string, string][]][] = [
   ['example.com\u3002みんな', []],
   ['example.com\uFF61みんな', []],
   ['example.co\u00ADm', []],
+  ['example.co\u034Fm', []],
+  // ...however many of them, and on either side of a separator: they are dropped as the
+  // text is read rather than measured against a window a run could walk past.
+  [`example.co${'\u00AD'.repeat(6)}m`, []],
+  [`example.com\u3002${'\u00AD'.repeat(6)}みんな`, []],
+  // Dropped rather than treated as a stop, since what follows one is what says whether
+  // the host carries on. Here that is a space, the shape right-to-left prose produces.
+  ['example.com\u200F next', [['example.com', 'https://example.com']]],
   [
     'https://example.com.みんな',
     [['https://example.com.みんな', 'https://example.com.みんな']],
