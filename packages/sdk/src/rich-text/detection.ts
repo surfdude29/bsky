@@ -128,6 +128,12 @@ const BRACKET_PAIRS: ReadonlyMap<string, string> = new Map([
  * The closers are not held to the same standard, and \u2019 is the cost of that: a path
  * carrying one inside a ‘...’ wrapper is cut at it. Dropping the pair would put a stray
  * ’ on the end of every single-quoted URL instead, which is the commoner text of the two.
+ *
+ * The last two are the fullwidth spellings of the first and the backtick, and pair like
+ * with like: an opener quotes a URL in the spelling it was written in, so the ASCII quote
+ * a path carries is no closer for \uFF02. This is where the map stops -- \u300C...\u300D
+ * and \u300E...\u300F are wrappers of their own rather than another spelling of one
+ * listed here, and admitting them is a separate decision from spelling these.
  */
 const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
   ['"', '"'],
@@ -135,6 +141,8 @@ const WRAPPER_PAIRS: ReadonlyMap<string, string> = new Map([
   ['\u2018', '\u2019'],
   ['\u00AB', '\u00BB'],
   ['`', '`'],
+  ['\uFF02', '\uFF02'],
+  ['\uFF40', '\uFF40'],
 ])
 
 /**
@@ -187,22 +195,21 @@ function hostContinues(text: string, at: number): boolean {
  * The character a match really begins after, as the mappings leave it. LEAD reads the raw
  * text, so it takes an invisible for a boundary and misses what a mapping folds a
  * character into; this rebuilds what it was looking at. The mirror of hostContinues, and
- * it reads the same way: invisibles are dropped as they are read, marks belong to the
- * character before them, and the mappings decide what a name is written with. So
- * "foo\u00ADexample.com" is the one name fooexample.com, "foo\uFF20example.com" an email
+ * it reads the same way: invisibles are dropped as they are read and marks belong to the
+ * character before them. Read through the mappings, as the caller does, that leaves
+ * "foo\u00ADexample.com" the one name fooexample.com, "foo\uFF20example.com" an email
  * address and "\u24D0example.com" the name aexample.com, none of which holds an
  * example.com to link.
  *
- * The character comes back rather than a verdict, since every rule the lead-in applies
- * applies to it: one answering a single rule would buy passage past the rest. "" is a
- * boundary in its own right -- the start of the text, or a keycap, which LEAD admits
- * outright and whose U+20E3 is a mark like any other, so it is recognized at its base
- * rather than refused at its mark.
- *
- * NFKC is wider than UTS 46 in one place: it folds the squared CJK emoji ("\u{1F233}" to
- * "空"), which UTS 46 leaves alone, so a URL run straight against one of those is not
- * detected. Ordinary emoji have no such mapping and are untouched, and hostContinues has
- * read text this way all along, so both ends of a match answer alike.
+ * The character comes back as written rather than mapped, and rather than as a verdict.
+ * Every rule the lead-in applies applies to it, one answering a single rule buying
+ * passage past the rest -- but only some of them are questions about what it folds to.
+ * Whether it continues a name is; which mark closes a wrapper is not, "\u201C" and
+ * "\uFF02" being different marks on the page. "" is a boundary in its own right: the
+ * start of the text, or a keycap, which LEAD admits outright and whose U+20E3 is a mark
+ * like any other, so it is recognized at its base rather than refused at its mark. The
+ * run must be that mark alone, which is all KEYCAP admits between the two: an acute in
+ * there is not a keycap, with or without an invisible after it.
  */
 function boundaryBefore(text: string, at: number): string {
   let marks = ''
@@ -214,8 +221,8 @@ function boundaryBefore(text: string, at: number): string {
       marks += ch
       continue
     }
-    if (marks.includes(KEYCAP_MARK) && KEYCAP_BASE_REGEX.test(ch)) return ''
-    return idnaMap(ch)
+    if (marks === KEYCAP_MARK && KEYCAP_BASE_REGEX.test(ch)) return ''
+    return ch
   }
   return ''
 }
@@ -318,7 +325,8 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       // "foo\u00ADhttps://example.com" reads as foohttps://example.com, a URL against a
       // word as "foohttps://..." is.
       const before = boundaryBefore(text.utf16, start)
-      if (LEAD_EXCLUDED_REGEX.test(before)) {
+      const mapping = idnaMap(before)
+      if (LEAD_EXCLUDED_REGEX.test(mapping)) {
         continue
       }
       if (domain) {
@@ -326,7 +334,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         // preceded by "-", "_", "." or "/" is part of a longer token, not a URL --
         // path/to/site.com, trailing_example.com. This is twitter-text's
         // invalidUrlWithoutProtocolPrecedingChars. Schemed URLs are exempt.
-        if (SCHEMELESS_STOP_REGEX.test(before)) {
+        if (SCHEMELESS_STOP_REGEX.test(mapping)) {
           continue
         }
         if (!isValidDomain(domain)) {
@@ -344,13 +352,13 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       }
 
       let matched = match[2]
-      // The wrapper that opened the match, which is the boundary read the same way: an
-      // invisible after the opener hides it from match[1] entirely, and
-      // "\u201C\u00ADhttps://example.com/path\u201Dfollowing" would swallow its closer.
-      const opener = before ? codePointBefore(before, before.length) : ''
-      const closer = WRAPPER_PAIRS.get(opener)
+      // The wrapper that opened the match, which is the same boundary -- an invisible
+      // after the opener hides it from match[1] entirely, and
+      // "\u201C\u00ADhttps://example.com/path\u201Dfollowing" would swallow its closer --
+      // taken as written, since a closer is matched in the text rather than in a mapping.
+      const closer = WRAPPER_PAIRS.get(before)
       if (closer !== undefined) {
-        const at = closerAt(matched, opener, closer)
+        const at = closerAt(matched, before, closer)
         if (at !== -1) {
           matched = matched.slice(0, at)
           // The tail ran to the next space, so the closer and everything after it are
@@ -397,8 +405,8 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       // foo@alice.com that the "@" the lead-in excludes would have kept out.
       const start = text.utf16.indexOf(match[3], match.index) - 1
       const end = start + match[3].length + 1
-      const before = boundaryBefore(text.utf16, start)
-      if (before === '/' || LEAD_EXCLUDED_REGEX.test(before)) {
+      const mapping = idnaMap(boundaryBefore(text.utf16, start))
+      if (mapping === '/' || LEAD_EXCLUDED_REGEX.test(mapping)) {
         continue
       }
       if (

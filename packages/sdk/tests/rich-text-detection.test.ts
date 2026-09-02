@@ -739,9 +739,34 @@ const linkCases: [string, [string, string][]][] = [
     '`\u00ADhttps://example.com/a`following',
     [['https://example.com/a', 'https://example.com/a']],
   ],
+  // A wrapper closes in the spelling it opened in: U+FF02 FULLWIDTH QUOTATION MARK and
+  // U+FF40 FULLWIDTH GRAVE ACCENT pair with themselves...
+  [
+    '\uFF02https://example.com/path\uFF02following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\uFF40https://example.com/path\uFF40following',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  // ...and not with the ASCII quote a path carries, which would cut this at /wiki/.
+  [
+    '\uFF02https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic\uFF02following',
+    [
+      [
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+        'https://en.wikipedia.org/wiki/"Weird_Al"_Yankovic',
+      ],
+    ],
+  ],
   // A keycap is admitted whole, so it is read at its base rather than refused at its
   // U+20E3, which is a mark like any other -- as are the marks on any other boundary.
   ['1\uFE0F\u20E3\u00ADexample.com', [['example.com', 'https://example.com']]],
+  // ...in the spellings KEYCAP admits, which is the mark alone after the base: an acute
+  // in between is no keycap, and an invisible after it does not make one.
+  ['1\u20E3\u00ADexample.com', [['example.com', 'https://example.com']]],
+  ['1\u0301\u20E3\u00ADexample.com', []],
+  ['1\u20E3\u0301\u00ADexample.com', []],
   ['\u26A0\u0301\u00ADexample.com', [['example.com', 'https://example.com']]],
   // The same rule on the other side. A dot and a label character continue the host
   // into a label the ASCII grammar cannot reach, so an internationalized domain is
