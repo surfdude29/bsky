@@ -65,11 +65,13 @@ const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
 // spellings as hashtags.
 const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
 // Named once and exported, since detection.ts asks the same question of the character on
-// the other side of an invisible: what a name is written with is what may not run into a
-// match. rich-text/index.ts re-exports a fixed list, so this stays internal.
-const NAME_CHARS = '\\p{L}\\p{N}\\p{M}'
-export const NAME_CHAR_REGEX = new RegExp(`[${NAME_CHARS}]`, 'u')
-const LEAD = `(^|${KEYCAP}|[^${NAME_CHARS}@#$]\\p{M}*)`
+// the other side of an invisible: what the lead-in denies here it must deny there, or the
+// invisible buys passage past the whole list rather than being ignored. The two are built
+// from one fragment so they cannot drift. rich-text/index.ts re-exports a fixed list, so
+// this stays internal.
+const LEAD_EXCLUDED = '\\p{L}\\p{N}\\p{M}@#$'
+export const LEAD_EXCLUDED_REGEX = new RegExp(`[${LEAD_EXCLUDED}]`, 'u')
+const LEAD = `(^|${KEYCAP}|[^${LEAD_EXCLUDED}]\\p{M}*)`
 
 // A handle takes the same lead-in as a URL, so it shares LEAD rather than restating it.
 export const MENTION_REGEX = new RegExp(`${LEAD}(@)([a-zA-Z0-9.-]+)(\\b)`, 'gu')

@@ -689,6 +689,22 @@ const linkCases: [string, [string, string][]][] = [
   // A schemed URL reaches the same rule: this is foohttps://example.com, a URL written
   // against a word.
   ['foo\u00ADhttps://example.com', []],
+  // ...and every other exclusion the lead-in makes is asked of the character behind the
+  // invisible too, or one would buy passage past the whole list rather than being
+  // ignored. Written out, these are an email address, a path, a hashtag and a cashtag.
+  ['foo@\u00ADexample.com', []],
+  ['path/\u00ADexample.com', []],
+  ['#\u00ADexample.com', []],
+  ['$\u00ADexample.com', []],
+  ['foo@\u00AD\u00ADexample.com', []],
+  // The lead-in's own exclusions reach a schemed URL as well...
+  ['foo@\u00ADhttps://example.com', []],
+  // ...while "-", "_", "." and "/" stay schemeless-only, as they are when written
+  // directly, so this one keeps its link where the line above loses it.
+  [
+    'path/\u00ADhttps://example.com',
+    [['https://example.com', 'https://example.com']],
+  ],
   // The same rule on the other side. A dot and a label character continue the host
   // into a label the ASCII grammar cannot reach, so an internationalized domain is
   // detected only with a scheme.
@@ -728,6 +744,10 @@ const linkCases: [string, [string, string][]][] = [
   // takes "example.com-foo" whole and its TLD is not one.
   ['example.com\uFF0Dfoo', []],
   ['example.com\uFF0D\uFF0Dfoo', []],
+  // ...however long the run: the scan reads through separators rather than measuring a
+  // fixed window, so the label character past them is always what decides.
+  ['example.com\uFF0D\uFF0D\uFF0Dfoo', []],
+  ['example.com\uFF0D\uFF0D\uFF0D\uFF0D\uFF0Dfoo', []],
   // ...but a trailing hyphen ends a name rather than continuing it, mapped or not.
   ['example.com\uFF0D', [['example.com', 'https://example.com']]],
   // A mark inside a path is part of the path: the tail runs to the next whitespace, so it
@@ -1038,6 +1058,10 @@ const mentionCases: [string, [string, string][]][] = [
   // ...and the same on the other side of the handle: written out this is the email
   // address foo@alice.com, which the "@" the lead-in excludes would have kept out.
   ['foo\u00AD@alice.com', []],
+  // ...and the rest of the lead-in's exclusions reach behind it as well: a "/" makes
+  // this a path, and an "@" an email address.
+  ['path/\u00AD@alice.com', []],
+  ['foo@\u00AD@alice.com', []],
   // ...a mark continuing the last label among them: this names alice.coḿ, and the
   // facet would resolve and notify a different account.
   ['@alice.com\u0301.org', []],

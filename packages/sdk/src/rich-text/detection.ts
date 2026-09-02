@@ -5,8 +5,8 @@ import { app } from '../lexicons/index.js'
 import { type UnicodeString } from './unicode.js'
 import {
   CASHTAG_REGEX,
+  LEAD_EXCLUDED_REGEX,
   MENTION_REGEX,
-  NAME_CHAR_REGEX,
   TAG_REGEX,
   TRAILING_PUNCTUATION_REGEX,
   URL_REGEX,
@@ -29,8 +29,8 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * real ASCII letter or digit, and the first alternative fires on a character one of those
  * mappings put there, or on a combining mark. The hyphen branch is the same: an ASCII one
  * is inside LABEL already, so only a mapped hyphen -- "example.com\uFF0Dfoo" is
- * example.com-foo -- ever reaches it. It reads one only where a label character follows,
- * a trailing hyphen ending a name rather than continuing it.
+ * example.com-foo -- ever reaches it. It reads a run of them only where a label character
+ * follows, a trailing hyphen ending a name rather than continuing it.
  *
  * A mark is in that branch because it attaches to the letter the match just ended on
  * rather than beginning anything after it: "example.com\u0301" is example.coḿ, which is
@@ -59,8 +59,8 @@ const IDNA_DOT_REGEX = /[\u3002\uFF0E\uFF61]/g
  */
 const IDNA_IGNORED_REGEX = /\p{Default_Ignorable_Code_Point}/u
 
-/** A separator -- a dot, or a hyphen or two -- and a code point, which may be astral. */
-const HOST_CONTINUES_SPAN = 3
+/** What a separator maps to, so a run of them can be read through rather than measured. */
+const IDNA_SEPARATOR_REGEX = /^[-.]+$/
 
 /**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are left
@@ -143,49 +143,59 @@ function closerAt(text: string, opener: string, closer: string): number {
   return -1
 }
 
+/** The IDNA mappings that decide where a label ends, as far as this test reads them. */
+function idnaMap(text: string): string {
+  return text.normalize('NFKC').replace(IDNA_DOT_REGEX, '.')
+}
+
 function hostContinues(text: string, at: number): boolean {
-  // Invisibles are dropped as they are read rather than counted against the span, so any
-  // number of them read as none, on either side of a separator. The scan stays linear,
-  // matches advancing past what it read. An invisible is not itself evidence that the
-  // host carries on -- what follows it is -- which keeps right-to-left prose working:
+  // Invisibles are dropped as they are read, so any number of them read as none, on
+  // either side of a separator. An invisible is not itself evidence that the host carries
+  // on -- what follows it is -- which keeps right-to-left prose working:
   // "example.com\u200F " is a host, a right-to-left mark and then a space.
+  //
+  // A separator says nothing on its own either -- "example.com\u3002" ends a sentence
+  // where "example.com\u3002みんな" names a host -- so a run of them is read through and
+  // the code point past it decides. Anything else answers the test by itself and ends the
+  // read, which keeps the scan linear and leaves no window to size.
   let after = ''
-  for (let i = at; i < text.length && after.length < HOST_CONTINUES_SPAN;) {
+  for (let i = at; i < text.length;) {
     const ch = String.fromCodePoint(text.codePointAt(i)!)
     i += ch.length
-    if (!IDNA_IGNORED_REGEX.test(ch)) after += ch
+    if (IDNA_IGNORED_REGEX.test(ch)) continue
+    after += ch
+    if (!IDNA_SEPARATOR_REGEX.test(idnaMap(ch))) break
   }
-  return HOST_CONTINUES_REGEX.test(
-    after.normalize('NFKC').replace(IDNA_DOT_REGEX, '.'),
-  )
+  return HOST_CONTINUES_REGEX.test(idnaMap(after))
 }
 
 /**
- * Whether prose runs into a match from the left rather than stopping before it. LEAD
- * admits anything that is not a letter, digit or mark, and an invisible is none of the
- * three -- but IDNA drops it, so "foo\u00ADexample.com" is the one name fooexample.com,
- * and linking the example.com inside it would point somewhere else. The mirror of
- * hostContinues, and it reads the same way: invisibles are dropped as they are read, and
- * what lies past them decides.
+ * What the lead-in stands in front of, or "" where it is a boundary in its own right.
+ * LEAD admits anything that is not a letter, digit or mark, and an invisible is none of
+ * the three -- but IDNA drops it, so "foo\u00ADexample.com" is the one name
+ * fooexample.com, and linking the example.com inside it would point somewhere else. The
+ * mirror of hostContinues, and it reads the same way: invisibles are dropped as they are
+ * read, and what lies past them decides.
  *
- * Only an invisible boundary is questioned, since every other character LEAD admits is
- * one prose cannot be running through. That is also what leaves a keycap alone: KEYCAP
- * opens on a digit and carries its variation selector inside, so "a1\uFE0F\u20E3https://..."
- * is a URL after an emoji, not after the "a".
+ * The character comes back rather than a verdict, since every rule the lead-in applies
+ * applies to it too -- an invisible answering only one of them would buy passage past the
+ * rest, "foo@\u00ADexample.com" naming an email address and "path/\u00ADexample.com" a
+ * path. "" for a visible boundary is what leaves a keycap alone: KEYCAP opens on a digit,
+ * and holding that digit to the exclusions would refuse "1\uFE0F\u20E3https://...".
  */
-function hostPrecedes(text: string, lead: string, at: number): boolean {
+function behindLead(text: string, lead: string, at: number): string {
   if (
     !lead ||
     !IDNA_IGNORED_REGEX.test(String.fromCodePoint(lead.codePointAt(0)!))
   ) {
-    return false
+    return ''
   }
   for (let i = at; i > 0;) {
     const ch = codePointBefore(text, i)
     i -= ch.length
-    if (!IDNA_IGNORED_REGEX.test(ch)) return NAME_CHAR_REGEX.test(ch)
+    if (!IDNA_IGNORED_REGEX.test(ch)) return ch
   }
-  return false
+  return ''
 }
 
 function countChar(str: string, char: string): number {
@@ -281,9 +291,11 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const start = text.utf16.indexOf(match[2], match.index)
       const index = { start, end: start + match[2].length }
 
-      // Checked for a schemed match too: "foo\u00ADhttps://example.com" reads as
-      // foohttps://example.com, a URL run against a word exactly as "foohttps://..." is.
-      if (hostPrecedes(text.utf16, match[1], match.index)) {
+      // The lead-in's own exclusions, asked of whatever an invisible boundary stands in
+      // front of. Checked for a schemed match too: "foo\u00ADhttps://example.com" reads
+      // as foohttps://example.com, a URL against a word as "foohttps://..." is.
+      const behind = behindLead(text.utf16, match[1], match.index)
+      if (LEAD_EXCLUDED_REGEX.test(behind)) {
         continue
       }
       if (domain) {
@@ -291,7 +303,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         // preceded by "-", "_", "." or "/" is part of a longer token, not a URL --
         // path/to/site.com, trailing_example.com. This is twitter-text's
         // invalidUrlWithoutProtocolPrecedingChars. Schemed URLs are exempt.
-        if (/[-_./]/.test(match[1])) {
+        if (/[-_./]/.test(match[1]) || /[-_./]/.test(behind)) {
           continue
         }
         if (!isValidDomain(domain)) {
@@ -353,12 +365,14 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       // A "/" before the "@" means the handle sits in a URL path
       // (https://example.com/@bsky.app), not a mention. MENTION_REGEX's lead-in admits
       // it, and the facet would overlap the link facet the same text produces.
-      if (match[1].startsWith('/')) {
+      // ...whether it is written there or an invisible stands in for it, as for the rest
+      // of the lead-in's exclusions: "foo\u00AD@alice.com" is the email address
+      // foo@alice.com, which the "@" the lead-in excludes would have kept out.
+      const behind = behindLead(text.utf16, match[1], match.index)
+      if (match[1].startsWith('/') || behind === '/') {
         continue
       }
-      // "foo\u00AD@alice.com" is the email address foo@alice.com, which the "@" the
-      // lead-in excludes would have kept out had the invisible not stood in for it.
-      if (hostPrecedes(text.utf16, match[1], match.index)) {
+      if (LEAD_EXCLUDED_REGEX.test(behind)) {
         continue
       }
       if (
