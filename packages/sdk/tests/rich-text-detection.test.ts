@@ -826,11 +826,7 @@ const linkCases: [string, [string, string][]][] = [
     [['https://example.com/a’', 'https://example.com/a’']],
   ],
   // Sentence punctuation is trimmed regardless, having no opener to pair with. That
-  // holds after a path too, which is the trim's known limit: a name really ending in
-  // one -- Wikipedia serves /wiki/Apple_Inc. and /wiki/Airplane! -- loses it, since
-  // nothing in the text separates that from a sentence ending after a link. Deciding
-  // it needs the paste that detection never sees, so a composer percent-encoding the
-  // last character is where that is fixed, not here.
+  // holds after a path too, which is the trim's known limit.
   [
     'see https://example.com/foo… ok',
     [['https://example.com/foo', 'https://example.com/foo']],
