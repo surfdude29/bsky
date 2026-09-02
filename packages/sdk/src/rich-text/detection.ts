@@ -29,13 +29,15 @@ const SCHEME_ONLY_REGEX = /^https?:\/\/$/i
  * other separators onto the second, and IDNA_IGNORED_REGEX drops what cannot separate
  * two labels. The label grammar is greedy, so what follows a match never begins with a
  * real ASCII letter or digit, and the first alternative fires on a character one of those
- * mappings put there, or on a combining mark. The hyphen branch is the same: an ASCII one
- * is inside LABEL already, so only a mapped hyphen -- "example.com\uFF0Dfoo" is
- * example.com-foo -- ever reaches it. It reads a run of them only where a label character
- * follows, a trailing hyphen ending a name rather than continuing it. That character need
- * not be ASCII: "example.com-foo" is no facet at all, LABEL taking it whole and the TLD
- * check refusing it, so "example.com-みんな" being a link to example.com would be two
- * spellings of one shape answering differently.
+ * mappings put there, or on a combining mark. The hyphen branch is nearly the same: LABEL
+ * carries on over an ASCII hyphen only where an ASCII letter or digit follows it, so what
+ * reaches this check is either a mapped hyphen -- "example.com\uFF0Dfoo" is example.com-foo
+ * -- or an ASCII one the grammar could not continue on. It reads a run of them only where a
+ * label character follows, a trailing hyphen ending a name rather than continuing it. That
+ * character need not be ASCII, which is what the second case turns on: "example.com-foo" is
+ * no facet at all, LABEL taking it whole and the TLD check refusing it, so
+ * "example.com-みんな" being a link to example.com would be two spellings of one shape
+ * answering differently.
  *
  * A mark is in that branch because it attaches to the letter the match just ended on
  * rather than beginning anything after it: "example.com\u0301" is example.coḿ, which is
