@@ -5,6 +5,8 @@ import { app } from '../lexicons/index.js'
 import { type UnicodeString } from './unicode.js'
 import {
   CASHTAG_REGEX,
+  KEYCAP_BASE_REGEX,
+  KEYCAP_MARK,
   LEAD_EXCLUDED_REGEX,
   MENTION_REGEX,
   TAG_REGEX,
@@ -61,6 +63,18 @@ const IDNA_IGNORED_REGEX = /\p{Default_Ignorable_Code_Point}/u
 
 /** What a separator maps to, so a run of them can be read through rather than measured. */
 const IDNA_SEPARATOR_REGEX = /^[-.]+$/
+
+/** A mark belongs to the character before it, on either side of a match. */
+const MARK_REGEX = /\p{M}/u
+
+/**
+ * What a schemeless match may not follow, over and above the lead-in's own exclusions: a
+ * domain preceded by one of these is part of a longer token rather than a URL. Anchored
+ * whole rather than at the end, since a mapping that expands to several characters is no
+ * separator -- "\u2026" folds to "..." and no name carries that, so an ellipsis before a
+ * URL stays the prose it reads as, where a fullwidth stop is a label separator.
+ */
+const SCHEMELESS_STOP_REGEX = /^[-_./]$/
 
 /**
  * Characters that end prose rather than a URL, wherever they fall. "_" and "~" are left
@@ -170,30 +184,38 @@ function hostContinues(text: string, at: number): boolean {
 }
 
 /**
- * What the lead-in stands in front of, or "" where it is a boundary in its own right.
- * LEAD admits anything that is not a letter, digit or mark, and an invisible is none of
- * the three -- but IDNA drops it, so "foo\u00ADexample.com" is the one name
- * fooexample.com, and linking the example.com inside it would point somewhere else. The
- * mirror of hostContinues, and it reads the same way: invisibles are dropped as they are
- * read, and what lies past them decides.
+ * The character a match really begins after, as the mappings leave it. LEAD reads the raw
+ * text, so it takes an invisible for a boundary and misses what a mapping folds a
+ * character into; this rebuilds what it was looking at. The mirror of hostContinues, and
+ * it reads the same way: invisibles are dropped as they are read, marks belong to the
+ * character before them, and the mappings decide what a name is written with. So
+ * "foo\u00ADexample.com" is the one name fooexample.com, "foo\uFF20example.com" an email
+ * address and "\u24D0example.com" the name aexample.com, none of which holds an
+ * example.com to link.
  *
  * The character comes back rather than a verdict, since every rule the lead-in applies
- * applies to it too -- an invisible answering only one of them would buy passage past the
- * rest, "foo@\u00ADexample.com" naming an email address and "path/\u00ADexample.com" a
- * path. "" for a visible boundary is what leaves a keycap alone: KEYCAP opens on a digit,
- * and holding that digit to the exclusions would refuse "1\uFE0F\u20E3https://...".
+ * applies to it: one answering a single rule would buy passage past the rest. "" is a
+ * boundary in its own right -- the start of the text, or a keycap, which LEAD admits
+ * outright and whose U+20E3 is a mark like any other, so it is recognized at its base
+ * rather than refused at its mark.
+ *
+ * NFKC is wider than UTS 46 in one place: it folds the squared CJK emoji ("\u{1F233}" to
+ * "空"), which UTS 46 leaves alone, so a URL run straight against one of those is not
+ * detected. Ordinary emoji have no such mapping and are untouched, and hostContinues has
+ * read text this way all along, so both ends of a match answer alike.
  */
-function behindLead(text: string, lead: string, at: number): string {
-  if (
-    !lead ||
-    !IDNA_IGNORED_REGEX.test(String.fromCodePoint(lead.codePointAt(0)!))
-  ) {
-    return ''
-  }
+function boundaryBefore(text: string, at: number): string {
+  let marks = ''
   for (let i = at; i > 0;) {
     const ch = codePointBefore(text, i)
     i -= ch.length
-    if (!IDNA_IGNORED_REGEX.test(ch)) return ch
+    if (IDNA_IGNORED_REGEX.test(ch)) continue
+    if (MARK_REGEX.test(ch)) {
+      marks += ch
+      continue
+    }
+    if (marks.includes(KEYCAP_MARK) && KEYCAP_BASE_REGEX.test(ch)) return ''
+    return idnaMap(ch)
   }
   return ''
 }
@@ -291,11 +313,12 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       const start = text.utf16.indexOf(match[2], match.index)
       const index = { start, end: start + match[2].length }
 
-      // The lead-in's own exclusions, asked of whatever an invisible boundary stands in
-      // front of. Checked for a schemed match too: "foo\u00ADhttps://example.com" reads
-      // as foohttps://example.com, a URL against a word as "foohttps://..." is.
-      const behind = behindLead(text.utf16, match[1], match.index)
-      if (LEAD_EXCLUDED_REGEX.test(behind)) {
+      // The lead-in's own exclusions, asked of the character the match really stands on
+      // rather than of the one LEAD happened to read. Asked of a schemed match too:
+      // "foo\u00ADhttps://example.com" reads as foohttps://example.com, a URL against a
+      // word as "foohttps://..." is.
+      const before = boundaryBefore(text.utf16, start)
+      if (LEAD_EXCLUDED_REGEX.test(before)) {
         continue
       }
       if (domain) {
@@ -303,7 +326,7 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
         // preceded by "-", "_", "." or "/" is part of a longer token, not a URL --
         // path/to/site.com, trailing_example.com. This is twitter-text's
         // invalidUrlWithoutProtocolPrecedingChars. Schemed URLs are exempt.
-        if (/[-_./]/.test(match[1]) || /[-_./]/.test(behind)) {
+        if (SCHEMELESS_STOP_REGEX.test(before)) {
           continue
         }
         if (!isValidDomain(domain)) {
@@ -321,7 +344,10 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       }
 
       let matched = match[2]
-      const opener = match[1][0]
+      // The wrapper that opened the match, which is the boundary read the same way: an
+      // invisible after the opener hides it from match[1] entirely, and
+      // "\u201C\u00ADhttps://example.com/path\u201Dfollowing" would swallow its closer.
+      const opener = before ? codePointBefore(before, before.length) : ''
       const closer = WRAPPER_PAIRS.get(opener)
       if (closer !== undefined) {
         const at = closerAt(matched, opener, closer)
@@ -365,14 +391,14 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       // A "/" before the "@" means the handle sits in a URL path
       // (https://example.com/@bsky.app), not a mention. MENTION_REGEX's lead-in admits
       // it, and the facet would overlap the link facet the same text produces.
-      // ...whether it is written there or an invisible stands in for it, as for the rest
-      // of the lead-in's exclusions: "foo\u00AD@alice.com" is the email address
-      // foo@alice.com, which the "@" the lead-in excludes would have kept out.
-      const behind = behindLead(text.utf16, match[1], match.index)
-      if (match[1].startsWith('/') || behind === '/') {
-        continue
-      }
-      if (LEAD_EXCLUDED_REGEX.test(behind)) {
+      // ...however it is written, as for the rest of the lead-in's exclusions: an
+      // invisible or a mapping stands in for the character just as well, so
+      // "foo\u00AD@alice.com" and "foo\uFF20@alice.com" are both the address
+      // foo@alice.com that the "@" the lead-in excludes would have kept out.
+      const start = text.utf16.indexOf(match[3], match.index) - 1
+      const end = start + match[3].length + 1
+      const before = boundaryBefore(text.utf16, start)
+      if (before === '/' || LEAD_EXCLUDED_REGEX.test(before)) {
         continue
       }
       if (
@@ -381,9 +407,6 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
       ) {
         continue // probably not a handle
       }
-
-      const start = text.utf16.indexOf(match[3], match.index) - 1
-      const end = start + match[3].length + 1
       // A handle is ASCII -- @atproto/syntax admits [a-zA-Z0-9.-] alone -- so a name
       // carrying on into a further label, or into a character IDNA maps inside this one,
       // is not one: it is written @alice.xn--q9jyb4c. An unmapped letter is prose here as

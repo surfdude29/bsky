@@ -705,6 +705,44 @@ const linkCases: [string, [string, string][]][] = [
     'path/\u00ADhttps://example.com',
     [['https://example.com', 'https://example.com']],
   ],
+  // ...and a character the mappings fold into one of them stands in for it too, the
+  // lead-in reading raw text where the far end of a match reads mapped. U+FF20 FULLWIDTH
+  // COMMERCIAL AT, U+FF0E FULLWIDTH FULL STOP, U+FF0D FULLWIDTH HYPHEN-MINUS, U+FF0F
+  // FULLWIDTH SOLIDUS: written out, these are an email address and three longer names.
+  ['foo\uFF20example.com', []],
+  ['foo\uFF0Eexample.com', []],
+  ['foo\uFF0Dexample.com', []],
+  ['path\uFF0Fexample.com', []],
+  // ...the cashtag and hashtag sigils among them (U+FF04, U+FF03), the second of which a
+  // link facet would otherwise take the text of.
+  ['\uFF04example.com', []],
+  ['\uFF03example.com', []],
+  // U+24D0 CIRCLED LATIN SMALL LETTER A, which folds to "a": this names aexample.com.
+  ['\u24D0example.com', []],
+  // ...but only as far as the mappings go. A fullwidth bracket is a bracket, and an
+  // ellipsis folds to "...", which no name can carry, so both stay boundaries -- the
+  // second where the ASCII "...example.com" is a longer token and does not link.
+  ['\uFF08example.com\uFF09', [['example.com', 'https://example.com']]],
+  ['\u2026example.com', [['example.com', 'https://example.com']]],
+  ['...example.com', []],
+  // An invisible after a wrapper hides the opener from the match, so the closer and the
+  // prose after it were swallowed. The boundary is read the same way for both.
+  [
+    '\u201C\u00ADhttps://example.com/path\u201Dfollowing',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '\u00AB\u00ADexample.com/path\u00BBfollowing',
+    [['example.com/path', 'https://example.com/path']],
+  ],
+  [
+    '`\u00ADhttps://example.com/a`following',
+    [['https://example.com/a', 'https://example.com/a']],
+  ],
+  // A keycap is admitted whole, so it is read at its base rather than refused at its
+  // U+20E3, which is a mark like any other -- as are the marks on any other boundary.
+  ['1\uFE0F\u20E3\u00ADexample.com', [['example.com', 'https://example.com']]],
+  ['\u26A0\u0301\u00ADexample.com', [['example.com', 'https://example.com']]],
   // The same rule on the other side. A dot and a label character continue the host
   // into a label the ASCII grammar cannot reach, so an internationalized domain is
   // detected only with a scheme.
@@ -1062,6 +1100,12 @@ const mentionCases: [string, [string, string][]][] = [
   // this a path, and an "@" an email address.
   ['path/\u00AD@alice.com', []],
   ['foo@\u00AD@alice.com', []],
+  // ...and a mapping stands in for the character as an invisible does: U+24D0 folds to
+  // "a" and U+FF20 to "@", so these are the name aexample and an email address.
+  ['\u24D0@alice.com', []],
+  ['foo\uFF20@alice.com', []],
+  // ...while a keycap is still a boundary behind one.
+  ['1\uFE0F\u20E3\u00AD@alice.com', [['@alice.com', 'alice.com']]],
   // ...a mark continuing the last label among them: this names alice.coḿ, and the
   // facet would resolve and notify a different account.
   ['@alice.com\u0301.org', []],
@@ -1135,6 +1179,16 @@ describe('detectFacets does not nest facets inside a link', () => {
     expect(links(input)).toEqual(expected)
     // and nothing else at all -- no nested tag or mention facet alongside the link
     expect(facetsOf(input)).toHaveLength(1)
+  })
+})
+
+describe('detectFacets leaves a fullwidth hashtag its text', () => {
+  // TAG_REGEX opens on "#" or "＃", and U+FF03 folds to "#", so a link facet starting at
+  // the character after it would win overlap resolution and take the tag's text with it.
+  it('＃example.com', () => {
+    const facets = facetsOf('\uFF03example.com')
+    expect(facets).toHaveLength(1)
+    expect(facets[0].features.filter(isTag)).toHaveLength(1)
   })
 })
 

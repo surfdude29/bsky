@@ -63,14 +63,21 @@ const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
 // by marks. The variation selector is optional, since older text writes the sequence
 // without it, and the "#" form costs nothing: TAG_REGEX's guard below refuses both
 // spellings as hashtags.
-const KEYCAP = '[0-9#*]\\uFE0F?\\u20E3'
-// Named once and exported, since detection.ts asks the same question of the character on
-// the other side of an invisible: what the lead-in denies here it must deny there, or the
-// invisible buys passage past the whole list rather than being ignored. The two are built
-// from one fragment so they cannot drift. rich-text/index.ts re-exports a fixed list, so
-// this stays internal.
+// Split into its parts, since detection.ts reads a keycap backwards -- the mark first,
+// the base last -- rather than as a sequence.
+const KEYCAP_BASE = '[0-9#*]'
+export const KEYCAP_MARK = '\u20E3'
+export const KEYCAP_BASE_REGEX = new RegExp(`^${KEYCAP_BASE}$`, 'u')
+const KEYCAP = `${KEYCAP_BASE}\\uFE0F?${KEYCAP_MARK}`
+// Named once and exported, since detection.ts asks the same question of the character a
+// match really stands on: what the lead-in denies here it must deny there, or an invisible
+// or a mapping buys passage past the whole list. The two are built from one fragment so
+// they cannot drift. The trailing "$" anchors the test at the end of what it is given --
+// a mapping may expand, and the character that ends up against the match is the one that
+// decides -- and is not the "$" inside the class, which is the cashtag sigil.
+// rich-text/index.ts re-exports a fixed list, so this stays internal.
 const LEAD_EXCLUDED = '\\p{L}\\p{N}\\p{M}@#$'
-export const LEAD_EXCLUDED_REGEX = new RegExp(`[${LEAD_EXCLUDED}]`, 'u')
+export const LEAD_EXCLUDED_REGEX = new RegExp(`[${LEAD_EXCLUDED}]$`, 'u')
 const LEAD = `(^|${KEYCAP}|[^${LEAD_EXCLUDED}]\\p{M}*)`
 
 // A handle takes the same lead-in as a URL, so it shares LEAD rather than restating it.

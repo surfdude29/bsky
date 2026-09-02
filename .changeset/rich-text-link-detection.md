@@ -28,9 +28,12 @@ Fix a range of rich-text link and mention detection bugs, and one hashtag case.
   prose rather than more of the name, so `bsky.appを見て` still links bsky.app.
 - **A Unicode-aware deny-list decides what may precede a URL or handle,** in place of
   "start of text, space or open paren", with detection then rejecting `-`, `_`, `.` and
-  `/` before a schemeless URL and `/` before a mention. An invisible is not a boundary
-  either, IDNA dropping it rather than reading a break in it: `foo­example.com` is the
-  one name fooexample.com and produces no link.
+  `/` before a schemeless URL and `/` before a mention. Every one of those exclusions is
+  put to the character a match really stands on: a soft hyphen written between `foo` and
+  `example.com` is dropped by IDNA rather than read as a break, leaving the one name
+  fooexample.com, and a character the mappings fold into one of them stands in for it just
+  as well -- `foo＠example.com` is an email address and `ⓐexample.com` the name
+  aexample.com.
 - **Facets are no longer nested inside one another,** and a bare domain followed
   immediately by `(` is treated as a method call rather than a URL, since `.now` and
   `.map` are real TLDs.
