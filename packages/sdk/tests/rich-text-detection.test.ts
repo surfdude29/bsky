@@ -861,6 +861,18 @@ const linkCases: [string, [string, string][]][] = [
   ],
   ['example.com/foo！', [['example.com/foo', 'https://example.com/foo']]],
   ['https://example.com؟', [['https://example.com', 'https://example.com']]],
+  // ...and it reads code points rather than code units: the last unit of an astral
+  // character is a lone surrogate, which no property matches. U+10A56 is KHAROSHTHI
+  // PUNCTUATION DANDA.
+  [
+    'https://example.com/path\u{10A56}',
+    [['https://example.com/path', 'https://example.com/path']],
+  ],
+  // ...a run of them included, a decrement of one leaving half a character behind.
+  [
+    'example.com/path\u{10A56}\u{10A56}',
+    [['example.com/path', 'https://example.com/path']],
+  ],
   // Which component the "@" sits in is decided per "@", not once per URL: stripping
   // the trailing "?" moves it into the authority in the first two and leaves it in
   // the path in the third.
@@ -995,6 +1007,9 @@ const mentionCases: [string, [string, string][]][] = [
   // facet would resolve and notify a different account.
   ['@alice.com\u0301.org', []],
   ['@alice.com\u0301 hi', []],
+  // An unmapped letter is prose here as it is for a link: CJK runs straight against a
+  // handle that is already complete.
+  ['@alice.comを見て', [['@alice.com', 'alice.com']]],
   // The ".test" suffix folds case, like every other TLD comparison.
   ['@alice.TEST hello', [['@alice.TEST', 'alice.TEST']]],
 ]

@@ -140,6 +140,18 @@ function countChar(str: string, char: string): number {
 }
 
 /**
+ * The code point ending at `end`, as text. `str[end - 1]` is one UTF-16 code unit, which
+ * for an astral character is a lone low surrogate -- no property matches one, so
+ * Terminal_Punctuation outside the BMP would go untrimmed.
+ */
+function codePointBefore(str: string, end: number): string {
+  const at = end - 2
+  return at >= 0 && str.codePointAt(at)! > 0xffff
+    ? str.slice(at, end)
+    : str[end - 1]
+}
+
+/**
  * Strips trailing characters that belong to the surrounding sentence rather than to the
  * URL. Counting brackets instead of testing for their presence lets example.com/a(b))
  * lose only the unbalanced ")" while https://foo.com/thing_(cool) keeps both of its own.
@@ -170,7 +182,7 @@ function trimTrailing(uri: string): string {
     delimiterAt === -1 ? Infinity : schemeLength + delimiterAt
 
   while (end > 0) {
-    const ch = uri[end - 1]
+    const ch = codePointBefore(uri, end)
     if (AUTHORITY_ONLY_STRIP.has(ch)) {
       // These are legal in a path, so they are only prose punctuation when they end an
       // authority: "https://example.com@" closes a userinfo and leaves the host empty,
@@ -182,18 +194,18 @@ function trimTrailing(uri: string): string {
       // Decided per character rather than once for the whole URI: "?" is both an
       // authority delimiter and strippable, so stripping one can move a character of
       // this set into the authority mid-loop.
-      if (firstDelimiter < end - 1) break
-      end--
+      if (firstDelimiter < end - ch.length) break
+      end -= ch.length
       continue
     }
     if (TRAILING_STRIP_REGEX.test(ch)) {
-      end--
+      end -= ch.length
       continue
     }
     const surplus = excess.get(ch)
     if (surplus !== undefined && surplus > 0) {
       excess.set(ch, surplus - 1)
-      end--
+      end -= ch.length
       continue
     }
     break
@@ -288,8 +300,10 @@ export function detectFacets(text: UnicodeString): Facet[] | undefined {
 
       const start = text.utf16.indexOf(match[3], match.index) - 1
       const end = start + match[3].length + 1
-      // A handle is ASCII -- @atproto/syntax admits [a-zA-Z0-9.-] alone -- so a host
-      // continuing into another script is not one. It is written @alice.xn--q9jyb4c.
+      // A handle is ASCII -- @atproto/syntax admits [a-zA-Z0-9.-] alone -- so a name
+      // carrying on into a further label, or into a character IDNA maps inside this one,
+      // is not one: it is written @alice.xn--q9jyb4c. An unmapped letter is prose here as
+      // it is for a link, so "@alice.comを見て" still mentions alice.com.
       if (hostContinues(text.utf16, end)) {
         continue
       }
