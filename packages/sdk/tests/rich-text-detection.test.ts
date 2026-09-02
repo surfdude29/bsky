@@ -569,7 +569,7 @@ const linkCases: [string, [string, string][]][] = [
     'xn--80ak6aa92e.com test',
     [['xn--80ak6aa92e.com', 'https://xn--80ak6aa92e.com']],
   ],
-  // A punycoded *final* label. The TLD list spells an internationalised TLD as its
+  // A punycoded *final* label. The TLD list spells an internationalized TLD as its
   // U-label ("みんな"), which ASCII text never carries, so the set holds the A-label.
   [
     'example.xn--q9jyb4c',
@@ -579,7 +579,7 @@ const linkCases: [string, [string, string][]][] = [
     'xn--80ak6aa92e.xn--q9jyb4c',
     [['xn--80ak6aa92e.xn--q9jyb4c', 'https://xn--80ak6aa92e.xn--q9jyb4c']],
   ],
-  // Still an exact comparison: "xn--" is not a licence to invent a TLD.
+  // Still an exact comparison: "xn--" is not a license to invent a TLD.
   ['example.xn--fake', []],
   // A link: every label is LDH-conformant and ".com" is a real TLD.
   ['v1.2-example.com', [['v1.2-example.com', 'https://v1.2-example.com']]],
@@ -587,11 +587,11 @@ const linkCases: [string, [string, string][]][] = [
   ['-bad.com', []],
   ['bad-.com', []],
 
-  // Digit-leading and single-digit first labels. These are all live sites: 1.org,
-  // 404media.co and 7.zip. What keeps the negatives below plain is the final label,
-  // never the first -- note 192.com and 192.168.1.1 differ only in their last. "1" and
-  // "99" are absent from the TLD set because RFC 1123 §2.1, restated in RFC 3696 §2,
-  // rules out an all-numeric TLD; "30am" is simply not a TLD.
+  // Digit-leading and single-digit first labels, all live sites: 1.org, 404media.co and
+  // 7.zip. What keeps the negatives below plain is the final label, never the first --
+  // 192.com and 192.168.1.1 differ only in their last. "1" and "99" are absent from the
+  // TLD set because RFC 1123 §2.1, restated in RFC 3696 §2, rules out an all-numeric
+  // TLD; "30am" is simply not a TLD.
   ['1.org', [['1.org', 'https://1.org']]],
   ['404media.co', [['404media.co', 'https://404media.co']]],
   ['192.com', [['192.com', 'https://192.com']]],
@@ -601,10 +601,10 @@ const linkCases: [string, [string, string][]][] = [
   ['it costs 4.99 total', []],
   ['See Section 4. In the box.', []],
 
-  // Run-on: a bare domain is matched as dot-separated LDH labels, an optional port and
-  // a tail that opens at "/", "?" or "#", so prose running straight on is outside the
-  // match. A schemed URL is not bound this way -- a comma is a sub-delim and legal in
-  // a reg-name, so https://example.com,then is a single match.
+  // Run-on: a bare domain is dot-separated LDH labels, an optional port and a tail that
+  // opens at "/", "?" or "#", so prose running straight on falls outside the match. A
+  // schemed URL is not bound this way: a comma is a sub-delim, legal in a reg-name, so
+  // https://example.com,then is a single match.
   ['go to example.com,then click', [['example.com', 'https://example.com']]],
   ['see example.com* for more', [['example.com', 'https://example.com']]],
   ['wait… example.com… hmm', [['example.com', 'https://example.com']]],
@@ -654,9 +654,9 @@ const linkCases: [string, [string, string][]][] = [
     [['https://example.com/', 'https://example.com/']],
   ],
   ['\u{1F517}example.com', [['example.com', 'https://example.com']]],
-  // A keycap is the one emoji family the deny-list cannot express on its own: its base
-  // is a digit (or "#"), which the lead-in excludes, and the rest of it is combining
-  // marks. TAG_REGEX already refuses "#\uFE0F\u20E3" as a tag, so there is no contest.
+  // A keycap is the one emoji family the deny-list cannot express on its own: the base
+  // is a digit (or "#"), which the lead-in excludes, and the rest is combining marks.
+  // TAG_REGEX already refuses "#\uFE0F\u20E3" as a tag, so there is no contest.
   [
     '1\uFE0F\u20E3https://example.com',
     [['https://example.com', 'https://example.com']],
@@ -676,7 +676,7 @@ const linkCases: [string, [string, string][]][] = [
   // written without spaces, so a URL run straight against it is not detected.
   ['日本語bsky.app', []],
   // The same rule on the other side. A dot and a label character continue the host
-  // into a label the ASCII grammar cannot reach, so an internationalised domain is
+  // into a label the ASCII grammar cannot reach, so an internationalized domain is
   // detected only with a scheme.
   ['example.com.みんな', []],
   ['example.com.みんな/path', []],
@@ -898,7 +898,7 @@ const schemedCases: [string, [string, string][]][] = [
     "https://o'reilly@example.com/",
     [["https://o'reilly@example.com/", "https://o'reilly@example.com/"]],
   ],
-  // Length does not enter into it: userinfo is a part of the authority grammar, not a
+  // Length does not enter into it: userinfo is part of the authority grammar, not a
   // decision taken per apostrophe within a window.
   [
     `https://o'${'a'.repeat(256)}@example.com/`,
@@ -911,7 +911,7 @@ const schemedCases: [string, [string, string][]][] = [
   ],
   // ...and only when that "@" is inside the authority. A quote is a hard stop, so the
   // userinfo run cannot reach that "@" and there is none: the host ends at the
-  // apostrophe, exactly as "https://example.com'dan" does. Short, but honest.
+  // apostrophe, exactly as "https://example.com'dan" does.
   ['https://o\'reilly"@example.com', [['https://o', 'https://o']]],
   // A match that trims down to nothing but its scheme is not a link.
   ['https://,,,', []],
@@ -956,16 +956,16 @@ const mentionCases: [string, [string, string][]][] = [
   ['https://example.com/@bsky.app', []],
   ['https://example.com/?q=@bsky.app', []],
   ['https://example.com/foo-@bsky.app', []],
-  // An internationalised email address is not a mention. With an ASCII-only
+  // An internationalized email address is not a mention. With an ASCII-only
   // lead-in the accented letter reads as a boundary and @example.com matches.
   ['josé@example.com', []],
   ['josé@example.com'.normalize('NFD'), []],
   ['мария@example.com', []],
-  // An internationalised handle can only be written as an A-label: @atproto/syntax
+  // An internationalized handle can only be written as an A-label: @atproto/syntax
   // admits [a-zA-Z0-9.-] alone.
   ['@alice.xn--q9jyb4c hi', [['@alice.xn--q9jyb4c', 'alice.xn--q9jyb4c']]],
-  // ...and only that spelling: a handle is ASCII, so a host continuing into another
-  // script is not one.
+  // ...and only that spelling: a handle is ASCII, so a name that carries on past what
+  // that grammar can see is not one.
   ['@alice.com.みんな', []],
   ['@alice.coｍ', []],
   ['@alice.co\u00ADm', []],
@@ -1040,12 +1040,12 @@ describe('detectFacets does not nest facets inside a link', () => {
 
 describe('detectFacets never emits overlapping facets', () => {
   // Facet ranges are written into the record, and a consumer that walks them in order
-  // (as segments() does) silently drops the second of any two that overlap -- so an
-  // overlap is invisible from segments() while still corrupting the record.
+  // (as segments() does) silently drops the second of any two that overlap, so an
+  // overlap corrupts the record while staying invisible from segments().
   //
-  // The corpus is derived from every case the five tables above declare, so each of
-  // those is checked for overlap automatically -- the older block at the top of the file
-  // is not. Only combinations that no single table exercises are added explicitly.
+  // The corpus is every case the five tables above declare, so each is checked for
+  // overlap automatically -- the older block at the top of the file is not. Only
+  // combinations that no single table exercises are added explicitly.
   const inputs = [
     ...linkCases.map(([input]) => input),
     ...schemedCases.map(([input]) => input),
