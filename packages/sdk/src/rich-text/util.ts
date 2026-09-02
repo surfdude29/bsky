@@ -26,33 +26,27 @@ const PORT = '(?::\\d{1,5}(?!\\d))?'
 // quoted URL is decided in detectFacets from the wrapper that opened it, not here.
 const TAIL = '(?:[/?#][^\\s<>]*)?'
 
-// A schemed URL's authority: any non-space run up to an RFC 3986 §3.2 delimiter, not
-// the LDH grammar above, which would truncate IDN hosts ("https://münchen.de" ->
-// "https://m") and drop IPv6 literals ("https://[::1]:8080").
+// A schemed URL's authority, in the shape RFC 3986 §3.2 gives it: an optional userinfo
+// ending in "@", then a host. Neither is held to the LDH grammar above, which would
+// truncate IDN hosts ("https://münchen.de" -> "https://m") and drop IPv6 literals
+// ("https://[::1]:8080"). Both end at the §3.2 delimiters and at the wrappers prose puts
+// around a URL, no registrable name carrying one.
 //
-// It also stops at the wrappers prose puts around a URL and at apostrophes, neither of
-// which a registrable name carries. That is a practical rule rather than a normative
-// one: RFC 3986 §2.2 makes "'" a sub-delim, so it is legal in a host and in a path.
-// Stopping there is what keeps Turkish suffixation out of the domain --
-// "https://example.com'dan" links to example.com -- while an apostrophe followed by an
-// "@" in the same authority is userinfo and is kept ("https://o'reilly@example.com").
-// The two alternatives are disjoint, so the group cannot backtrack.
+// The host stops at apostrophes as well, which is what keeps Turkish suffixation out of
+// it: "https://example.com'dan" links to example.com. That is a practical rule rather than
+// a normative one -- RFC 3986 §2.2 makes "'" a sub-delim, so it is legal in a host as much
+// as in a path -- and it is why "'" and "’" are excluded from the host class rather than
+// from AUTHORITY_STOP: userinfo keeps them ("https://o'reilly@example.com").
 //
-// The lookahead spans AUTHORITY_STOP rather than the §3.2 delimiters alone, so it cannot
-// admit an apostrophe on the strength of an "@" lying past the point the authority itself
-// ends: in "https://o'reilly\"@example.com" the quote is a hard stop, so that "@" is no
-// userinfo and the host ends at the apostrophe. "'" and "’" are deliberately absent from
-// the stop set, being the conditional pair the lookahead must still be able to cross.
+// Writing the two out is what makes "inside the authority" true of that "@" rather than
+// merely intended. The userinfo run ends where the authority does, so an "@" beyond a
+// wrapper cannot reach back to license an apostrophe: in "https://o'reilly\"@example.com"
+// the quote is a hard stop, there is no userinfo, and the host ends at the apostrophe.
 //
-// It is bounded rather than open-ended because it runs once per apostrophe, each time
-// rescanning to the same "@": unbounded, a run of them is quadratic, and 4,000 of them
-// cost 14ms against 0.04ms bounded. The 255 is a cap on how far an apostrophe may look
-// for its "@", not a limit the URI grammar imposes -- RFC 3986 gives userinfo no length
-// at all. A longer one therefore reads as a suffix instead, and "https://o'<256
-// a's>@example.com" is detected as "https://o": the case is not handled, rather than
-// handled and rare.
+// The userinfo group gives a character back at a time when no "@" follows it, which is
+// linear in the run it scans; nothing else in the authority backtracks.
 const AUTHORITY_STOP = '\\s/?#"“”‘«»`<>'
-const AUTHORITY = `(?:[^${AUTHORITY_STOP}'’]|['’](?=[^${AUTHORITY_STOP}]{0,255}@))+`
+const AUTHORITY = `(?:[^${AUTHORITY_STOP}]*@)?[^${AUTHORITY_STOP}'’]+`
 
 // What may precede a URL or a handle: anything that is not a letter, a digit or a
 // combining mark, and not "@", "#" or "$". A deny-list rather than an allow-list, so

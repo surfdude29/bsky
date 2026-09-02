@@ -902,9 +902,20 @@ const schemedCases: [string, [string, string][]][] = [
     "https://o'reilly@example.com/",
     [["https://o'reilly@example.com/", "https://o'reilly@example.com/"]],
   ],
+  // Length does not enter into it: userinfo is a part of the authority grammar, not a
+  // decision taken per apostrophe within a window.
+  [
+    `https://o'${'a'.repeat(256)}@example.com/`,
+    [
+      [
+        `https://o'${'a'.repeat(256)}@example.com/`,
+        `https://o'${'a'.repeat(256)}@example.com/`,
+      ],
+    ],
+  ],
   // ...and only when that "@" is inside the authority. A quote is a hard stop, so the
-  // "@" here is unreachable from the apostrophe and there is no userinfo: the host ends
-  // at the apostrophe, exactly as "https://example.com'dan" does. Short, but honest.
+  // userinfo run cannot reach that "@" and there is none: the host ends at the
+  // apostrophe, exactly as "https://example.com'dan" does. Short, but honest.
   ['https://o\'reilly"@example.com', [['https://o', 'https://o']]],
   // A match that trims down to nothing but its scheme is not a link.
   ['https://,,,', []],
